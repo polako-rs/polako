@@ -1,6 +1,6 @@
 [package]
 name = "polako"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Define the Bevy tree with `eml!`, style it using a very-css-like `ess` syntax and relate data data with `bind!` and `connect!`"
