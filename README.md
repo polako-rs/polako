@@ -1,3 +1,5 @@
+![Polako](docs/polakoko.png)
+
 ## About
 
 `polako` is the not yet published [plugin](https://github.com/jkb0o/belly) for a [Bevy](https://bevyengine.org/) game engine. It will come here in a really short time.
