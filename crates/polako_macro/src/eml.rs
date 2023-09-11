@@ -95,7 +95,7 @@ impl EmlNode {
                         for child in children.iter() {
                             chs = match child {
                                 EmlChild::Literal(lit) => quote! { #chs
-                                    <<#tag as #eml::Element>::PushText as #eml::PushText>::push_text(world, &mut e_children, #lit)
+                                    <<#tag as #eml::Element>::PushText as #eml::PushText>::push_text(world, &mut e_children, #lit);
                                 },
                                 EmlChild::Node(ch) => {
                                     let ch = ch.build(cst, eml, false);
@@ -124,20 +124,20 @@ impl EmlNode {
                 let fetch_model = if let Some(model) = &self.model {
                     quote! {
                         {
-                            <<#tag as #cst::Construct>::Output as #eml::AssignContent<<#tag as #eml::Element>::ContentType>>::assign_content(world, #model.entity, e_bundle);
+                            world.entity_mut(#model.entity).insert(value);
                             #model
                         }
                     }
                 } else if as_root {
                     quote! {
                         {
-                            <<#tag as #cst::Construct>::Output as #eml::AssignContent<<#tag as #eml::Element>::ContentType>>::assign_content(world, this, e_bundle);
+                            world.entity_mut(this).insert(value);
                             Model::<#tag>::new(this)
                         }
                     }
                 } else {
                     quote! {
-                        Model::<#tag>::new(<<#tag as #cst::Construct>::Output as #eml::IntoContent<<#tag as #eml::Element>::ContentType>>::into_content(world, e_bundle))
+                        Model::<#tag>::new(<<#tag as #cst::Construct>::Output as #eml::IntoContent>::into_content(world, e_bundle))
                     }
                 };
 
@@ -145,7 +145,7 @@ impl EmlNode {
                     let e_bundle = #cst::construct!(#tag { #build });
                     let e_model = #fetch_model;
                     let e_content = { #children };
-                    <<#tag as #eml::Element>::Install as #eml::InstallElement<<#tag as #eml::Element>::ContentType>>::install(world, e_model, e_content);
+                    <<#tag as #eml::Element>::Install as #eml::InstallElement>::install(world, e_model, e_content);
                     e_model.entity
                 }
             }
@@ -238,7 +238,7 @@ impl Eml {
                 }
             } else {
                 body = quote! { #body
-                    let #eml::Valid(#model) = <<#tag as #eml::Element>::ContentType as #eml::NewContent>::new_content(world);
+                    let #model = world.spawn_empty().id();
                     let #model: #eml::Model<#tag> = #eml::Model::new(#model);
                 }
             }

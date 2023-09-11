@@ -5,9 +5,8 @@ use polako_constructivism::{*, traits::Construct};
 
 
 pub trait Element: Component + Construct + {
-    type ContentType: NewContent;
-    type Install: InstallElement<Self::ContentType>;
-    type PushText: PushText<Self::ContentType>;
+    type Install: InstallElement;
+    type PushText: PushText;
 }
 
 pub struct Model<C: Element> {
@@ -45,44 +44,20 @@ impl Eml {
     }
 }
 
-pub trait InstallElement<Content> {
-    type Element: Element<ContentType = Content>;
-    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Content>);
+pub trait InstallElement {
+    type Element: Element;
+    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>);
 }
 
-pub trait PushText<Content> {
-    fn push_text<'c, S: AsRef<str>>(world: &mut World, content: &'c mut Vec<Content>, text: S) -> &'c Content;
+pub trait PushText {
+    fn push_text<'c, S: AsRef<str>>(world: &mut World, content: &'c mut Vec<Entity>, text: S) -> &'c Entity;
 }
 
-pub trait IntoContent<Content> {
-    fn into_content(world: &mut World, this: Self) -> Content;
+pub trait IntoContent {
+    fn into_content(world: &mut World, this: Self) -> Entity;
 }
-impl<T: Bundle> IntoContent<Entity> for T {
+impl<T: Bundle> IntoContent for T {
     fn into_content(world: &mut World, this: Self) -> Entity {
         world.spawn(this).id()
-    }
-}
-
-pub struct Valid<T>(T);
-
-pub trait NewContent {
-    type Output;
-    fn new_content(world: &mut World) -> Self::Output;
-}
-
-impl NewContent for Entity {
-    type Output = Valid<Entity>;
-    fn new_content(world: &mut World) -> Self::Output {
-        Valid(world.spawn_empty().id())
-    }
-}
-
-pub trait AssignContent<Content> {
-    fn assign_content(world: &mut World, content: Content, value: Self);
-}
-
-impl<T: Bundle> AssignContent<Entity> for T {
-    fn assign_content(world: &mut World, content: Entity, value: Self) {
-        world.entity_mut(content).insert(value);
     }
 }
