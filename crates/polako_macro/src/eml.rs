@@ -124,20 +124,20 @@ impl EmlNode {
                 let fetch_model = if let Some(model) = &self.model {
                     quote! {
                         {
-                            world.entity_mut(#model.entity).insert(value);
+                            world.entity_mut(#model.entity).insert(e_bundle);
                             #model
                         }
                     }
                 } else if as_root {
                     quote! {
                         {
-                            world.entity_mut(this).insert(value);
+                            world.entity_mut(this).insert(e_bundle);
                             Model::<#tag>::new(this)
                         }
                     }
                 } else {
                     quote! {
-                        Model::<#tag>::new(<<#tag as #cst::Construct>::Output as #eml::IntoContent>::into_content(world, e_bundle))
+                        Model::<#tag>::new(world.spawn(e_bundle).id())
                     }
                 };
 

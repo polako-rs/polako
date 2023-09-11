@@ -52,12 +52,3 @@ pub trait InstallElement {
 pub trait PushText {
     fn push_text<'c, S: AsRef<str>>(world: &mut World, content: &'c mut Vec<Entity>, text: S) -> &'c Entity;
 }
-
-pub trait IntoContent {
-    fn into_content(world: &mut World, this: Self) -> Entity;
-}
-impl<T: Bundle> IntoContent for T {
-    fn into_content(world: &mut World, this: Self) -> Entity {
-        world.spawn(this).id()
-    }
-}
