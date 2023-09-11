@@ -1,27 +1,25 @@
-use polako_constructivism::*;
-use polako_macro::*;
-use polako_eml::*;
 use bevy::prelude::*;
+use polako_constructivism::*;
+use polako_eml::*;
+use polako_macro::*;
 
 #[allow(dead_code)]
 #[derive(Construct, Component)]
 #[extends(Elem)]
-pub struct Rect { 
+pub struct Rect {
     size: (f32, f32),
 }
 
-pub struct RectDoesNotAcceptsChildren;
-
 impl rect_construct::Methods {
-    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Valid<&'c Entity> {
+    pub fn push_text<'c, S: AsRef<str>>(
+        &self,
+        world: &mut World,
+        content: &'c mut Vec<Entity>,
+        text: S,
+    ) -> Valid<&'c Entity> {
         content.push(world.spawn_empty().id());
         Valid(content.last().unwrap())
     }
-    // #[allow(unused_variables)]
-    // pub fn push_model(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<Div>) -> Valid<()> {
-    //     content.push(model.entity);
-    //     Valid(())
-    // }
 }
 
 impl Element for Rect {
@@ -29,10 +27,8 @@ impl Element for Rect {
 }
 pub struct InstallRect;
 impl InstallElement for InstallRect {
-    type Element = Div;
-    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {
-        
-    }
+    type Element = Rect;
+    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {}
 }
 pub struct AddTextToRect;
 
@@ -40,7 +36,7 @@ pub struct AddTextToRect;
 #[derive(Construct, Component)]
 #[extends(Rect)]
 pub struct Div {
-    background: Color
+    background: Color,
 }
 impl Element for Div {
     type Install = InstallDiv;
@@ -49,21 +45,9 @@ pub struct InstallDiv;
 impl InstallElement for InstallDiv {
     type Element = Div;
     fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {
-        let mut func = IntoSystem::into_system(div);
-        func.initialize(world);
-        let command = func.run((this, content), world);
-        command.apply(world, this.entity);
+        world.entity_mut(this.entity).push_children(&content);
     }
 }
-
-fn div(
-    In((this, content)):In<(Model<Div>,Vec<Entity>)>
-    
-) -> Eml {
-    Eml::new(|_, _| { })
-}
-
-
 
 fn main() {
     let x = eml! {
@@ -74,21 +58,19 @@ fn main() {
                 "With some text!"
             ],
             Div [
-                Div,
-            ]
+                Rect,
+            ],
+            Div { size: (100., 50.) }
         ]
         // Div [ "with text" ]
     };
-    // let x = 
-    
+    // let x =
 }
 
 mod test {
     use bevy::prelude::Component;
 
-    fn test<C: Component>(c: C) {
-
-    }
+    fn test<C: Component>(c: C) {}
     #[derive(Component)]
     struct X {}
 }

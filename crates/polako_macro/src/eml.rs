@@ -19,8 +19,12 @@ pub struct EmlArgument {
 impl Parse for EmlArgument {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let ident = input.parse()?;
-        input.parse::<Token![:]>()?;
-        let value = input.parse()?;
+        let value = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            input.parse()?
+        } else {
+            syn::parse2(quote! { true })?
+        };
         Ok(EmlArgument { ident, value })
     }
 }
@@ -128,6 +132,7 @@ impl EmlNode {
                 for arg in args.iter() {
                     let ident = &arg.ident;
                     let value = &arg.value;
+                    // let assign = quote_spanned!()
                     build = quote! { #build #ident: #value, };
                 }
                 let fetch_model = if let Some(model) = &self.model {
