@@ -8,7 +8,18 @@ readme = "README.md"
 homepage = "https://github.com/jkb0o/polako"
 repository = "https://github.com/jkb0o/polako"
 
+[workspace]
+members = [
+    "crates/polako_constructivism",
+    "crates/polako_macro",
+    "crates/polako_eml",
+]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+polako_constructivism = { path = "crates/polako_constructivism" }
+polako_eml = { path = "crates/polako_eml" }
+polako_macro = { path = "crates/polako_macro" }
+
