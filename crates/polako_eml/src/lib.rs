@@ -3,10 +3,13 @@ use std::marker::PhantomData;
 use bevy::prelude::*;
 use polako_constructivism::{*, traits::Construct};
 
+pub mod msg {
+    pub struct TextAsChild;
+}
+
 
 pub trait Element: Component + Construct + {
     type Install: InstallElement;
-    type PushText: PushText;
 }
 
 pub struct Model<C: Element> {
@@ -49,6 +52,26 @@ pub trait InstallElement {
     fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>);
 }
 
-pub trait PushText {
-    fn push_text<'c, S: AsRef<str>>(world: &mut World, content: &'c mut Vec<Entity>, text: S) -> &'c Entity;
+
+pub struct Valid<T>(pub T);
+pub struct NotSupported<T>(pub T);
+
+#[derive(Component, Construct)]
+pub struct Elem {
+
+}
+
+
+impl elem_construct::Methods {
+    #[allow(unused_variables)]
+    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotSupported<msg::TextAsChild> {
+        NotSupported(msg::TextAsChild)
+    }
+
+    #[allow(unused_variables)]
+    pub fn push_model<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Valid<()> {
+        content.push(model.entity);
+        Valid(())
+    }
+
 }

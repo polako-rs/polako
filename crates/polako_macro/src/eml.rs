@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use quote::{quote, format_ident};
-use proc_macro2::{token_stream, Ident, TokenStream};
+use quote::{quote, format_ident, quote_spanned};
+use proc_macro2::{token_stream, Ident, TokenStream, Span};
 
-use syn::{parse::Parse, Expr, Token, token, braced, bracketed, Lit};
+use syn::{parse::Parse, Expr, Token, token, braced, bracketed, Lit, spanned::Spanned, LitStr};
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -26,7 +26,7 @@ impl Parse for EmlArgument {
 }
 
 pub enum EmlChild {
-    Literal(String),
+    Literal(LitStr),
     Node(EmlNode)
 }
 
@@ -34,7 +34,7 @@ impl Parse for EmlChild {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         if let Ok(lit) = input.parse::<Lit>() {
             if let Lit::Str(val) = lit {
-                Ok(EmlChild::Literal(val.value()))
+                Ok(EmlChild::Literal(val.clone()))
             } else {
                 throw!(lit, "Only string literals supported");
             }
@@ -94,13 +94,22 @@ impl EmlNode {
                         let mut chs = quote! { };
                         for child in children.iter() {
                             chs = match child {
-                                EmlChild::Literal(lit) => quote! { #chs
-                                    <<#tag as #eml::Element>::PushText as #eml::PushText>::push_text(world, &mut e_children, #lit);
+                                EmlChild::Literal(lit) => {
+                                    let assign = quote_spanned!{ lit.span()=> 
+                                        let _: Valid<&Entity> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
+                                    };
+                                    quote! { #chs #assign }
+                                        
                                 },
                                 EmlChild::Node(ch) => {
+                                    let span = ch.tag.span();
                                     let ch = ch.build(cst, eml, false);
-                                    quote! { #chs
-                                        e_children.push({ #ch });
+                                    let assign = quote_spanned!{ span=>
+                                        let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
+                                    };
+                                    quote! { #chs 
+                                        let e_child = { #ch };
+                                        #assign 
                                     }
                                 }
                             }
@@ -124,6 +133,7 @@ impl EmlNode {
                 let fetch_model = if let Some(model) = &self.model {
                     quote! {
                         {
+
                             world.entity_mut(#model.entity).insert(e_bundle);
                             #model
                         }
@@ -141,12 +151,12 @@ impl EmlNode {
                     }
                 };
 
-                quote! {
+                quote_spanned! {self.tag.span()=>
                     let e_bundle = #cst::construct!(#tag { #build });
                     let e_model = #fetch_model;
                     let e_content = { #children };
                     <<#tag as #eml::Element>::Install as #eml::InstallElement>::install(world, e_model, e_content);
-                    e_model.entity
+                    e_model
                 }
             }
         }

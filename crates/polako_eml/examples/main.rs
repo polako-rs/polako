@@ -5,13 +5,27 @@ use bevy::prelude::*;
 
 #[allow(dead_code)]
 #[derive(Construct, Component)]
+#[extends(Elem)]
 pub struct Rect { 
     size: (f32, f32),
 }
 
+pub struct RectDoesNotAcceptsChildren;
+
+impl rect_construct::Methods {
+    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Valid<&'c Entity> {
+        content.push(world.spawn_empty().id());
+        Valid(content.last().unwrap())
+    }
+    // #[allow(unused_variables)]
+    // pub fn push_model(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<Div>) -> Valid<()> {
+    //     content.push(model.entity);
+    //     Valid(())
+    // }
+}
+
 impl Element for Rect {
     type Install = InstallRect;
-    type PushText = AddTextToRect;
 }
 pub struct InstallRect;
 impl InstallElement for InstallRect {
@@ -21,12 +35,6 @@ impl InstallElement for InstallRect {
     }
 }
 pub struct AddTextToRect;
-impl PushText for AddTextToRect {
-    fn push_text<'c, S: AsRef<str>>(world: &mut World, content: &'c mut Vec<Entity>, text: S) -> &'c Entity {
-        content.push(world.spawn_empty().id());
-        content.last().unwrap()
-    }
-}
 
 #[allow(dead_code)]
 #[derive(Construct, Component)]
@@ -36,7 +44,6 @@ pub struct Div {
 }
 impl Element for Div {
     type Install = InstallDiv;
-    type PushText = <Self::Extends as Element>::PushText;
 }
 pub struct InstallDiv;
 impl InstallElement for InstallDiv {
@@ -65,10 +72,23 @@ fn main() {
             Div,
             Div:dude { background: Color::RED, size: (100., 100.) } [
                 "With some text!"
+            ],
+            Div [
+                Div,
             ]
         ]
         // Div [ "with text" ]
     };
     // let x = 
     
+}
+
+mod test {
+    use bevy::prelude::Component;
+
+    fn test<C: Component>(c: C) {
+
+    }
+    #[derive(Component)]
+    struct X {}
 }

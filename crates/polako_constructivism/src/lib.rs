@@ -1,2 +1,2 @@
-use polako_macro::*;
+pub use polako_macro::*;
 implement_constructivism!();
