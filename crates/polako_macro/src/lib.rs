@@ -122,6 +122,18 @@ pub fn eml(input: pm::TokenStream) -> pm::TokenStream {
     };
     pm::TokenStream::from(stream)
 }
+#[proc_macro]
+pub fn build(input: pm::TokenStream) -> pm::TokenStream {
+    let mut input = parse_macro_input!(input as Eml);
+    input.strict = true;
+    let cst = lib("constructivism");
+    let eml = lib("eml");
+    let stream = match input.build(cst, eml) {
+        Err(e) => e.to_compile_error(),
+        Ok(s) => s,
+    };
+    pm::TokenStream::from(stream)
+}
 
 #[proc_macro_derive(Element, attributes(extends, mixin, required, default, build))]
 pub fn derive_element(input: pm::TokenStream) -> pm::TokenStream {

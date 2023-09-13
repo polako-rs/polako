@@ -16,35 +16,39 @@ pub trait Element: Component + Construct + {
     type Build: Build;
 }
 
-pub struct Model<C: Element> {
+
+pub struct EntityComponent<C: Element> {
     pub entity: Entity,
     marker: PhantomData<C>
 }
 
-impl<C: Element> Model<C> {
+impl<C: Element> EntityComponent<C> {
     pub fn new(entity: Entity) -> Self {
-        Model { entity, marker: PhantomData }
+        EntityComponent { entity, marker: PhantomData }
     }
 
-    pub fn view(&self) -> View<C> {
-        View { entity: self.entity, marker: PhantomData }
+    pub fn as_view(&self) -> View<C> {
+        View { for_model: self.entity, marker: PhantomData }
+    }
+    pub fn as_model(&self) -> Model<C> {
+        Model { for_view: self.entity, marker: PhantomData }
     }
 }
 
-impl<C: Element> Copy for Model<C> {
+impl<C: Element> Copy for EntityComponent<C> {
     
 }
 
-impl<C: Element> std::fmt::Debug for Model<C> {
+impl<C: Element> std::fmt::Debug for EntityComponent<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f
-            .debug_struct("Model")
+            .debug_struct("EntityComponent")
             .field("entity", &self.entity)
             .finish()
     }
 }
 
-impl<C: Element> Clone for Model<C> {
+impl<C: Element> Clone for EntityComponent<C> {
     fn clone(&self) -> Self {
         Self {
             entity: self.entity,
@@ -53,13 +57,61 @@ impl<C: Element> Clone for Model<C> {
     }
 }
 
+pub trait IntoBase<T> {
+    fn into_base(self) -> T;
+}
+impl<B: Element, T: Element + Extends<B>> IntoBase<EntityComponent<B>> for EntityComponent<T> {
+    fn into_base(self) -> EntityComponent<B> {
+        EntityComponent::new(self.entity)
+    }
+}
+
 #[derive(Component)]
-pub struct View<C: Element> {
-    pub entity: Entity,
+pub struct Model<C: Element> {
+    pub for_view: Entity,
     marker: PhantomData<C>
 }
 
-pub type BuildArgs<T> = In<(Model<T>, Vec<Entity>)>;
+impl<C: Element> Model<C> {
+    pub fn new(for_view: Entity) -> Self {
+        Self {
+            for_view,
+            marker: PhantomData
+        }
+    }
+}
+
+impl<C: Element> std::fmt::Debug for Model<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f
+            .debug_struct("EntityComponent")
+            .field("for_view", &self.for_view)
+            .finish()
+    }
+}
+
+impl<C: Element> Clone for Model<C> {
+    fn clone(&self) -> Self {
+        Self {
+            for_view: self.for_view,
+            marker: PhantomData
+        }
+    }
+}
+
+
+#[derive(Component)]
+pub struct View<C: Element> {
+    pub for_model: Entity,
+    marker: PhantomData<C>
+}
+impl<C: Element> View<C> {
+    pub fn new(entity: Entity) -> Self {
+        Self { for_model: entity, marker: PhantomData }
+    }
+}
+
+pub type BuildArgs<T> = In<(Entity, EntityComponent<T>, Vec<Entity>)>;
 
 pub struct Eml<Root: Element>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
 
@@ -85,7 +137,7 @@ impl<Root: Element> Command for Eml<Root> {
 
 pub trait Build {
     type Element: Element;
-    fn build(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>);
+    fn build(world: &mut World, this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>);
 }
 
 
@@ -100,8 +152,8 @@ pub struct Elem {
 pub struct BuildElem;
 impl Build for BuildElem {
     type Element = Elem;
-    fn build(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {
-        world.entity_mut(this.entity).push_children(&content);
+    fn build(world: &mut World, this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>) {
+        world.entity_mut(model.entity).push_children(&content);
     }
 }
 
@@ -117,13 +169,28 @@ impl elem_construct::Methods {
     }
 
     #[allow(unused_variables)]
-    pub fn push_model<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Valid<()> {
+    pub fn push_model<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> Valid<()> {
         content.push(model.entity);
         Valid(())
     }
 
 }
 
-pub fn validate_builder<E: Element + Extends<R>, R: Element>(In(eml): In<Eml<R>>) -> Eml<R> {
-    eml
+pub struct Builder<T: Element>(Eml<T>);
+impl<T: Element> Builder<T> {
+    pub fn new(eml: Eml<T>) -> Self {
+        Self(eml)
+    }
+    pub fn eml(self) -> Eml<T> {
+        self.0
+    }
 }
+
+pub fn validate_builder<E: Element + Extends<R>, R: Element>(In(builder): In<Builder<R>>) -> Eml<R> {
+    builder.eml()
+}
+
+
+// pub fn assign_views(
+//     views: Query<&View
+// )

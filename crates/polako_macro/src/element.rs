@@ -32,11 +32,11 @@ impl Element {
             pub struct #build;
             impl #eml::Build for #build {
                 type Element = #ty;
-                fn build(world: &mut #bevy::World, this: #eml::Model<Self::Element>, content: Vec<#bevy::Entity>) {
+                fn build(world: &mut #bevy::World, this: Entity, model: #eml::EntityComponent<Self::Element>, content: Vec<#bevy::Entity>) {
                     let mut func = #bevy::IntoSystem::into_system(#func).pipe(#eml::validate_builder::<#ty, _>);
                     func.initialize(world);
-                    let eml = func.run((this, content), world);
-                    eml.write(world, this.entity);
+                    let eml = func.run((this, model, content), world);
+                    eml.write(world, this);
                     func.apply_deferred(world)
                 }
             }

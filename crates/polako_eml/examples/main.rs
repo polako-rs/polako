@@ -30,7 +30,7 @@ impl Element for Rect {
 pub struct InstallRect;
 impl Build for InstallRect {
     type Element = Rect;
-    fn build(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {}
+    fn build(world: &mut World, this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>) {}
 }
 
 #[allow(dead_code)]
@@ -43,9 +43,9 @@ pub struct Div {
 
 
 fn div(
-    In((this, content)): BuildArgs<Div>
-) -> Eml<Rect> {
-    Eml::new(|_, _| { })
+    In((this, model, content)): BuildArgs<Div>
+) -> Builder<Rect> {
+    Builder::new(Eml::new(|_, _| { }))
 }
 
 fn main() {

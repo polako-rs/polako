@@ -78,7 +78,7 @@ impl EmlNode {
     pub fn fetch_models(&self, models: &mut HashMap<Ident, (Ident, bool)>, root: bool) -> syn::Result<()> {
         if let Some(model) = self.model.clone() {
             if models.contains_key(&model) {
-                throw!(model, format!("Model {} already defined", model.to_string()));
+                throw!(model, format!("EntityComponent {} already defined", model.to_string()));
             }
 
             models.insert(model, (self.tag.clone(), root));
@@ -93,7 +93,7 @@ impl EmlNode {
         Ok(())
     }
 
-    pub fn build(&self, cst: &TokenStream, eml: &TokenStream, as_root: bool) -> TokenStream {
+    pub fn build(&self, cst: &TokenStream, eml: &TokenStream, as_root: bool, strict: bool) -> syn::Result<TokenStream> {
         let tag = &self.tag;
         let children = match &self.children {
             EmlChildren::Provided(ident) => quote!{ #ident },
@@ -111,7 +111,7 @@ impl EmlNode {
                         },
                         EmlChild::Node(ch) => {
                             let span = ch.tag.span();
-                            let ch = ch.build(cst, eml, false);
+                            let ch = ch.build(cst, eml, false, strict)?;
                             let assign = quote_spanned!{ span=>
                                 let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
                             };
@@ -133,10 +133,40 @@ impl EmlNode {
             }
         };
         let model = match &self.args {
-            EmlArguments::View(model) => quote! {
-                Model::<#tag>::new(
-                    world.entity_mut(#model.entity).insert(#model.view()).id()
-                )
+            // regular view association:
+            // build! { 
+            //     Div [
+            //         Label {{ model }}
+            //     ]
+            // }
+            EmlArguments::View(model) => if strict && !as_root {
+                 quote! {{
+                    let e_this = world.spawn_empty().id();
+                    (#model.into_base(), e_this)
+                }}
+            // element builder root
+            // build! {
+            //     Label {{ model }}
+            // }
+            } else if strict && as_root {
+                quote! {{
+                    let e_view = #model.as_view();
+                    let mut e_model = #model.as_model();
+                    e_model.for_view = __root__;
+                    world.entity_mut(#model.entity).insert((e_model, e_view));
+                    (#model.into_base(), __root__)
+                }}
+            } else {
+                throw!(tag, "View assigment only supported inside build! macro.");
+
+            },
+            // do not assign view
+            EmlArguments::Declared(v) if v.is_empty() && strict && as_root => quote! {{
+                let e_model = #eml::EntityComponent::new(__root__);
+                (e_model, __root__)                
+            }},
+            EmlArguments::Declared(_) if strict && as_root => {
+                throw!(tag, "Root element of the builder constructed by outer eml");
             },
             EmlArguments::Declared(args) => {
                 let mut build = quote! { };
@@ -150,30 +180,38 @@ impl EmlNode {
                     quote! {
                         {
 
-                            world.entity_mut(#model.entity).insert(#build);
-                            #model
+                            world.entity_mut(#model.entity)
+                                .insert(#build);
+                                // .insert((
+                                //     #eml::Model::<#tag>::new(#model.entity),
+                                //     #eml::View::<#tag>::new(#model.entity)
+                                // ))
+                            (#model, #model.entity)
                         }
                     }
                 } else if as_root {
                     quote! {
                         {
-                            world.entity_mut(__this).insert(#build);
-                            Model::<#tag>::new(__this)
+                            world.entity_mut(__root__).insert(#build);
+                            (EntityComponent::<#tag>::new(__root__), __root__)
                         }
                     }
                 } else {
                     quote! {
-                        Model::<#tag>::new(world.spawn(#build).id())
+                        {
+                            let e_model = EntityComponent::<#tag>::new(world.spawn(#build).id());
+                            (e_model, e_model.entity)
+                        }
                     }
                 }
             }
         };
-        quote_spanned! {self.tag.span()=>
-            let e_model = #model;
+        Ok(quote_spanned! {self.tag.span()=>
+            let (e_model, __this__) = #model;
             let e_content = { #children };
-            <<#tag as #eml::Element>::Build as #eml::Build>::build(world, e_model, e_content);
-            e_model
-        }
+            <<#tag as #eml::Element>::Build as #eml::Build>::build(world, __this__, e_model, e_content);
+            #eml::EntityComponent::<#tag>::new(__this__)
+        })
     }
 }
 
@@ -224,13 +262,14 @@ impl Parse for EmlNode {
     }
 }
 
-pub struct Model {
+pub struct EntityComponent {
     pub ident: Ident,
     pub ty: Ident,
 }
 
 pub struct Eml {
     pub span: Span,
+    pub strict: bool,
     pub roots: Vec<EmlNode>
 }
 
@@ -241,7 +280,7 @@ impl Parse for Eml {
         for root in input.parse_terminated(EmlNode::parse, Token![;])? {
             roots.push(root)
         }
-        Ok(Eml { roots, span })
+        Ok(Eml { roots, span, strict: false })
     }
 }
 
@@ -261,17 +300,17 @@ impl Eml {
         for (model, (tag, is_root)) in models.iter() {
             if *is_root {
                 body = quote! { #body
-                    let #model: #eml::Model<#tag> = #eml::Model::new(__this);
+                    let #model: #eml::EntityComponent<#tag> = #eml::EntityComponent::new(__root__);
                 }
             } else {
                 body = quote! { #body
                     let #model = world.spawn_empty().id();
-                    let #model: #eml::Model<#tag> = #eml::Model::new(#model);
+                    let #model: #eml::EntityComponent<#tag> = #eml::EntityComponent::new(#model);
                 }
             }
         }
         for root in self.roots.iter() {
-            let build = root.build(&cst, &eml, true);
+            let build = root.build(&cst, &eml, true, self.strict)?;
             body = quote! { 
                 #body
                 #build;
@@ -281,10 +320,16 @@ impl Eml {
         let Some(root_ty) = root_ty else {
             throw!(self.span, "Can't detect Eml exact type");
         };
-        Ok(quote!{ 
-            #eml::Eml::<#root_ty>::new(move |world: &mut #bevy::World, __this: #bevy::Entity| {
+        let body = quote!{ 
+            #eml::Eml::<#root_ty>::new(move |world: &mut #bevy::World, __root__: #bevy::Entity| {
+                let __this__ = __root__;
                 #body
             })
+        };
+        Ok(if self.strict {
+            quote! { #eml::Builder::new(#body) }
+        } else {
+            body
         })
     }
 }

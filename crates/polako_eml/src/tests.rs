@@ -10,8 +10,8 @@ pub struct Div {
 }
 
 
-fn div(In((_model, content)): BuildArgs<Div>) -> Eml<Elem> {
-    eml! {
+fn div(In((_this, _model, content)): BuildArgs<Div>) -> Builder<Elem> {
+    build! {
         Elem [[ content ]]
     }
 }
@@ -35,9 +35,9 @@ pub struct TextElement {
 #[extends(Div)]
 pub struct Bold { }
 
-fn bold(In((model, content)): BuildArgs<Bold>) -> Eml<Div> {
-    eml! {
-        Div {{ model }} [[ content ]]
+fn bold(In((_this, _model, content)): BuildArgs<Bold>) -> Builder<Div> {
+    build! {
+        Div [[ content ]]
     }
 }
 
@@ -46,20 +46,20 @@ fn bold(In((model, content)): BuildArgs<Bold>) -> Eml<Div> {
 #[extends(Div)]
 pub struct Label { text: String }
 
-fn label(In((model, _content)): BuildArgs<Label>, mut commands: Commands) -> Eml<Div> {
-    commands.entity(model.entity).insert(TextElement { text: "".to_string() });
-    eml! { 
+fn label(In((this, model, _content)): BuildArgs<Label>, mut commands: Commands) -> Builder<Div> {
+    commands.entity(this).insert(TextElement { text: "".to_string() });
+    build! { 
         Div {{ model }}
     }
 }
 
 fn update_label_system(
-    models: Query<&Label, Changed<Label>>,
-    mut views: Query<(&mut TextElement, &View<Label>)>
+    models: Query<(&Label, &Model<Label>), Changed<Label>>,
+    mut views: Query<&mut TextElement>
 ) {
-    for (mut text, view) in views.iter_mut() {
-        if let Ok(label) = models.get(view.entity) {
-            text.text = label.text.clone();
+    for (label, model) in models.iter() {
+        if let Ok(mut elem) = views.get_mut(model.for_view) {
+            elem.text = label.text.clone();
         }
     }
 }
@@ -72,11 +72,29 @@ pub struct Quote {
 
 }
 
-fn quote(In((model, content)): BuildArgs<Quote>) -> Eml<Div> {
-    eml! {
-        Div {{ model }} [
-            "Quote:",
-            Bold [[ content ]]
+fn quote(In((_this, _model, content)): BuildArgs<Quote>) -> Builder<Div> {
+    build! {
+        Div [
+            Bold ["Quote:"],
+            Div [[ content ]]
+        ]
+    }
+}
+
+#[derive(Component, Element)]
+#[extends(Label)]
+#[build(field)]
+pub struct Field {
+    label: String
+}
+
+fn field(In((_this, model, _content)): BuildArgs<Field>, q: Query<&Field>) -> Builder<Div> {
+    let f = q.get(model.entity).unwrap();
+    let label = f.label.clone();
+    build! {
+        Div [
+            Label { text: label },
+            Label {{ model }}
         ]
     }
 }
@@ -134,10 +152,49 @@ fn test_quote() {
     let mut app = App::new();
     app.add_systems(Update, update_label_system);
     let eml = eml! { Quote [ "War never changes" ] };
-    eml.apply(&mut app.world);
+    let root = app.world.spawn_empty().id();
+    eml.write(&mut app.world, root);
     app.update();
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&Quote, &Div)>().iter(world).len());
-    // assert_eq!(1, world.query::<&TextElement>().iter(world).len());
+    assert_eq!(0, world.query::<(&Bold, &Div, &TextElement)>().iter(world).len());
+    assert_eq!(0, world.query::<(&Div, &TextElement)>().iter(world).len());
+
+    let root = world.entity(root);
+    let children = root.get::<Children>().unwrap();
+    assert_eq!(2, children.len());
+    let bold = world.entity(children[0]);
+    let bold_children = bold.get::<Children>().unwrap();
+    assert_eq!(1, bold_children.len());
+    let quote_label = world.entity(bold_children[0]).get::<TextElement>().unwrap();
+    assert_eq!(&quote_label.text, "Quote:");
+    let body_children = world.entity(children[1]).get::<Children>().unwrap();
+    assert_eq!(1, body_children.len());
+    let quote_content = world.entity(body_children[0]).get::<TextElement>().unwrap();
+    assert_eq!(&quote_content.text, "War never changes");
+}
+
+#[test]
+fn test_field() {
+    let mut app = App::new();
+    app.add_systems(Update, update_label_system);
+    let eml = eml! { Field { label: "hello", text: "world" } };
+    let root = app.world.spawn_empty().id();
+    eml.write(&mut app.world, root);
+    app.update();
+    let world = &mut app.world;
+    assert_eq!(2, world.query::<&TextElement>().iter(world).len());
+    assert_eq!(2, world.query::<&View<Label>>().iter(world).len());
+    let children = world.entity(root).get::<Children>().unwrap();
+    println!("children: {children:?}");
+    assert_eq!(2, children.len());
+    let t0 = world.entity(children[0]).get::<TextElement>();
+    let t1 = world.entity(children[1]).get::<TextElement>();
+    assert!(t0.is_some());
+    assert!(t1.is_some());
+    assert_eq!(t0.unwrap().text, "hello");
+    assert_eq!(t1.unwrap().text, "world");
+    let root_text = world.entity(root).get::<TextElement>();
+    assert!(root_text.is_none());
 
 }
