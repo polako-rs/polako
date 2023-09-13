@@ -58,6 +58,15 @@ pub enum EmlArguments {
     Declared(Vec<EmlArgument>),
 }
 
+impl EmlArguments {
+    pub fn is_view(&self) -> bool {
+        match self {
+            Self::View(_) => true,
+            _ => false
+        }
+    }
+}
+
 pub struct EmlNode {
     pub tag: Ident,
     pub model: Option<Ident>,
@@ -86,84 +95,84 @@ impl EmlNode {
 
     pub fn build(&self, cst: &TokenStream, eml: &TokenStream, as_root: bool) -> TokenStream {
         let tag = &self.tag;
-        match &self.args {
-            EmlArguments::View(ident) => quote! {
-                world.entity_mut(#ident.entity).insert(#ident.view()).id()
-            },
-            EmlArguments::Declared(args) => {
-                let children = match &self.children {
-                    EmlChildren::Provided(ident) => quote!{ #ident },
-                    EmlChildren::Declared(children) => {
-                        let size = children.len();
-                        let mut chs = quote! { };
-                        for child in children.iter() {
-                            chs = match child {
-                                EmlChild::Literal(lit) => {
-                                    let assign = quote_spanned!{ lit.span()=> 
-                                        let _: Valid<&Entity> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
-                                    };
-                                    quote! { #chs #assign }
-                                        
-                                },
-                                EmlChild::Node(ch) => {
-                                    let span = ch.tag.span();
-                                    let ch = ch.build(cst, eml, false);
-                                    let assign = quote_spanned!{ span=>
-                                        let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
-                                    };
-                                    quote! { #chs 
-                                        let e_child = { #ch };
-                                        #assign 
-                                    }
-                                }
-                            }
-                        }
-                        quote! { 
-                            {
-                                let mut e_children = ::std::vec::Vec::<_>::new();
-                                e_children.reserve(#size);
-                                #chs
-                                e_children
+        let children = match &self.children {
+            EmlChildren::Provided(ident) => quote!{ #ident },
+            EmlChildren::Declared(children) => {
+                let size = children.len();
+                let mut chs = quote! { };
+                for child in children.iter() {
+                    chs = match child {
+                        EmlChild::Literal(lit) => {
+                            let assign = quote_spanned!{ lit.span()=> 
+                                let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
+                            };
+                            quote! { #chs #assign }
+                                
+                        },
+                        EmlChild::Node(ch) => {
+                            let span = ch.tag.span();
+                            let ch = ch.build(cst, eml, false);
+                            let assign = quote_spanned!{ span=>
+                                let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
+                            };
+                            quote! { #chs 
+                                let e_child = { #ch };
+                                #assign 
                             }
                         }
                     }
-                };
+                }
+                quote! { 
+                    {
+                        let mut e_children = ::std::vec::Vec::<_>::new();
+                        e_children.reserve(#size);
+                        #chs
+                        e_children
+                    }
+                }
+            }
+        };
+        let model = match &self.args {
+            EmlArguments::View(model) => quote! {
+                Model::<#tag>::new(
+                    world.entity_mut(#model.entity).insert(#model.view()).id()
+                )
+            },
+            EmlArguments::Declared(args) => {
                 let mut build = quote! { };
                 for arg in args.iter() {
                     let ident = &arg.ident;
                     let value = &arg.value;
-                    // let assign = quote_spanned!()
                     build = quote! { #build #ident: #value, };
                 }
-                let fetch_model = if let Some(model) = &self.model {
+                build = quote! { #cst::construct!(#tag { #build }) };
+                if let Some(model) = &self.model {
                     quote! {
                         {
 
-                            world.entity_mut(#model.entity).insert(e_bundle);
+                            world.entity_mut(#model.entity).insert(#build);
                             #model
                         }
                     }
                 } else if as_root {
                     quote! {
                         {
-                            world.entity_mut(this).insert(e_bundle);
-                            Model::<#tag>::new(this)
+                            world.entity_mut(__this).insert(#build);
+                            Model::<#tag>::new(__this)
                         }
                     }
                 } else {
                     quote! {
-                        Model::<#tag>::new(world.spawn(e_bundle).id())
+                        Model::<#tag>::new(world.spawn(#build).id())
                     }
-                };
-
-                quote_spanned! {self.tag.span()=>
-                    let e_bundle = #cst::construct!(#tag { #build });
-                    let e_model = #fetch_model;
-                    let e_content = { #children };
-                    <<#tag as #eml::Element>::Install as #eml::InstallElement>::install(world, e_model, e_content);
-                    e_model
                 }
             }
+        };
+        quote_spanned! {self.tag.span()=>
+            let e_model = #model;
+            let e_content = { #children };
+            <<#tag as #eml::Element>::Build as #eml::Build>::build(world, e_model, e_content);
+            e_model
         }
     }
 }
@@ -221,16 +230,18 @@ pub struct Model {
 }
 
 pub struct Eml {
+    pub span: Span,
     pub roots: Vec<EmlNode>
 }
 
 impl Parse for Eml {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut roots = vec![];
+        let span = input.span();
         for root in input.parse_terminated(EmlNode::parse, Token![;])? {
             roots.push(root)
         }
-        Ok(Eml { roots })
+        Ok(Eml { roots, span })
     }
 }
 
@@ -246,10 +257,11 @@ impl Eml {
         let bevy = quote!{ ::bevy::prelude };
         let mut body = quote! { };
         let models = self.fetch_models()?;
+        let mut root_ty = None;
         for (model, (tag, is_root)) in models.iter() {
             if *is_root {
                 body = quote! { #body
-                    let #model: #eml::Model<#tag> = #eml::Model::new(this);
+                    let #model: #eml::Model<#tag> = #eml::Model::new(__this);
                 }
             } else {
                 body = quote! { #body
@@ -263,10 +275,14 @@ impl Eml {
             body = quote! { 
                 #body
                 #build;
-            }
+            };
+            root_ty = Some(root.tag.clone());
         }
+        let Some(root_ty) = root_ty else {
+            throw!(self.span, "Can't detect Eml exact type");
+        };
         Ok(quote!{ 
-            #eml::Eml::new(|world: &mut #bevy::World, this: #bevy::Entity| {
+            #eml::Eml::<#root_ty>::new(move |world: &mut #bevy::World, __this: #bevy::Entity| {
                 #body
             })
         })

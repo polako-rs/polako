@@ -1,3 +1,6 @@
+use std::path::Component;
+
+use element::Element;
 use eml::Eml;
 use proc_macro as pm;
 use proc_macro2::TokenStream;
@@ -11,10 +14,12 @@ use constructivist::derive::{ConstructMode, Constructable, Methods};
 use constructivist::genlib;
 
 mod eml;
+mod element;
 
 fn lib<S: AsRef<str>>(name: S) -> TokenStream {
-    let global = format_ident!("{}", name.as_ref());
-    let local = format_ident!("polako_{}", name.as_ref());
+    let name = name.as_ref();
+    let global = format_ident!("{name}");
+    let local = format_ident!("polako_{name}");
     let lib = quote! { ::polako::#global };
     let Some(manifest_path) = std::env::var_os("CARGO_MANIFEST_DIR")
         .map(std::path::PathBuf::from)
@@ -31,7 +36,9 @@ fn lib<S: AsRef<str>>(name: S) -> TokenStream {
     let Some(pkg) = pkg.as_table() else { return lib };
     let Some(pkg) = pkg.get("name") else { return lib };
     let Some(pkg) = pkg.as_str() else { return lib };
-    if pkg.starts_with("polako_mod") {
+    if pkg == &format!("polako_{name}") {
+        quote!{ crate }
+    } else if pkg.starts_with("polako_mod_") {
         lib
     } else if pkg.starts_with("polako_") {
         quote! { ::#local }
@@ -114,4 +121,32 @@ pub fn eml(input: pm::TokenStream) -> pm::TokenStream {
         Ok(s) => s,
     };
     pm::TokenStream::from(stream)
+}
+
+#[proc_macro_derive(Element, attributes(extends, mixin, required, default, build))]
+pub fn derive_element(input: pm::TokenStream) -> pm::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let cst = lib("constructivism");
+    let eml = lib("eml");
+    let construct = match Constructable::from_derive(input.clone(), ConstructMode::object()) {
+        Err(e) => return pm::TokenStream::from(e.to_compile_error()),
+        Ok(r) => r
+    };
+    let construct = match construct.build(cst.clone()) {
+        Err(e) => return pm::TokenStream::from(e.to_compile_error()),
+        Ok(r) => r
+    };
+    let element = match Element::from_derive(input) {
+        Err(e) => return pm::TokenStream::from(e.to_compile_error()),
+        Ok(r) => r
+    };
+    let element = match element.build(cst, eml) {
+        Err(e) => return pm::TokenStream::from(e.to_compile_error()),
+        Ok(r) => r
+    };
+
+    pm::TokenStream::from(quote! { 
+        #construct
+        #element
+    })
 }

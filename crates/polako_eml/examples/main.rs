@@ -10,43 +10,42 @@ pub struct Rect {
     size: (f32, f32),
 }
 
+
+
 impl rect_construct::Methods {
     pub fn push_text<'c, S: AsRef<str>>(
         &self,
         world: &mut World,
         content: &'c mut Vec<Entity>,
         text: S,
-    ) -> Valid<&'c Entity> {
+    ) -> Valid<()> {
         content.push(world.spawn_empty().id());
-        Valid(content.last().unwrap())
+        Valid(())
     }
 }
 
 impl Element for Rect {
-    type Install = InstallRect;
+    type Build = InstallRect;
 }
 pub struct InstallRect;
-impl InstallElement for InstallRect {
+impl Build for InstallRect {
     type Element = Rect;
-    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {}
+    fn build(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {}
 }
-pub struct AddTextToRect;
 
 #[allow(dead_code)]
-#[derive(Construct, Component)]
+#[derive(Component, Element)]
+#[build(div)]
 #[extends(Rect)]
 pub struct Div {
     background: Color,
 }
-impl Element for Div {
-    type Install = InstallDiv;
-}
-pub struct InstallDiv;
-impl InstallElement for InstallDiv {
-    type Element = Div;
-    fn install(world: &mut World, this: Model<Self::Element>, content: Vec<Entity>) {
-        world.entity_mut(this.entity).push_children(&content);
-    }
+
+
+fn div(
+    In((this, content)): BuildArgs<Div>
+) -> Eml<Rect> {
+    Eml::new(|_, _| { })
 }
 
 fn main() {
