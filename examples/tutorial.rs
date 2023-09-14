@@ -3,11 +3,11 @@ use bevy::prelude::*;
 use polako::eml::*;
 
 // 1. Define element.
-#[derive(Component, Element)] // - You need to derive at least Component and Element
-#[extends(Elem)]
-// - You have to extend element from another element
-//   Polako comes single `Elem` element out of the box
-#[build(my_element)] // - You have to provide build function for Element
+#[rustfmt::skip]
+#[derive(Component, Element)]   // - You need to derive at least Component and Element
+#[extends(Elem)]                // - You have to extend element from another element
+                                //   Polako comes single `Elem` element out of the box
+#[build(my_element)]            // - You have to provide build function for Element
 pub struct MyElement {}
 
 fn my_element(BuildArgs { content, .. }: BuildArgs<MyElement>) -> Builder<Elem> {
@@ -17,12 +17,14 @@ fn my_element(BuildArgs { content, .. }: BuildArgs<MyElement>) -> Builder<Elem> 
 }
 
 // 2. You can add a tree of elements to the world.
+#[allow(dead_code)]
 fn step_a(mut commands: Commands) {
     commands.add(eml! {
         MyElement [             // MyElement can accept any other elements as content
             MyElement, MyElement, MyElement,
                                 // But MyElement can't accept string literals as children
-                                // the next won't compile:
+                                // the next won't compile with error message
+                                // expected `Implemented`, found `NotImplemented<TextAsChild>`
             // "Hello world!"
         ]
     })
@@ -57,18 +59,87 @@ impl mynode_construct::Protocols {
         world: &mut World,
         content: &'c mut Vec<Entity>,
         text: S,
-    ) -> Valid<()> {
+    ) -> Implemented {
         let entity = world
             .spawn(TextComponent {
                 text: text.as_ref().to_string(),
             })
             .id();
         content.push(entity);
-        Valid(())
+        Implemented
     }
 }
 
+#[allow(dead_code)]
+fn step_3(mut commands: Commands) {
+    commands.add(eml! {
+        MyNode [
+            "With text and..",
+            MyElement,
+            "..ther nodes."
+        ]
+    })
+}
+
+// 4. The ability to accept elements as content contolled by `push_content`
+// protocol. You can override it and forbid any content for example. Or use
+// `AcceptNoContent` mixin provided by polako
+#[derive(Component, Element)]
+#[extends(Elem)]
+#[mixin(AcceptNoContent)]
+#[build(dead_end)]
+pub struct DeadEnd;
+
+fn dead_end(BuildArgs { .. }: BuildArgs<DeadEnd>) -> Builder<Elem> {
+    build! { Elem }
+}
+
+#[allow(dead_code)]
+fn step_4(mut commands: Commands) {
+    commands.add(eml! { 
+        MyNode [
+            DeadEnd [
+                // uncomment to get 'expected `Implemented`, found `NotImplemented<ElementAsContent>`'
+                // MyNode
+            ]
+        ]
+    })
+}
+
+// 5. You can assign values to the fields from the `eml!`. Becouse of constructivism, it is possible
+// to pass values to every component fields from the single definition.
+#[derive(Component, Element)]
+#[extends(MyElement)]
+#[build(rect)]
+pub struct Rect {
+    pub position: Vec2,
+    pub size: Vec2
+}
+
+fn rect(BuildArgs { content, .. }: BuildArgs<Rect>) -> Builder<Elem> {
+    build! { Elem [[ content ]] }
+}
+#[derive(Component, Element)]
+#[extends(Rect)]
+#[build(div)]
+pub struct Div {
+    pub background: Color
+}
+fn div(BuildArgs { content, .. }: BuildArgs<Div>) -> Builder<Rect> {
+    build! { Rect [[ content ]] }
+}
+
+#[allow(dead_code)]
+fn step_5(mut commands: Commands) {
+    commands.add(eml! {
+        Div { background: Color::RED, size: Vec2::splat(50.)} [
+            Div { background: Color::WHITE, position: Vec2::splat(50.)},
+            Rect { size: Vec2::splat(10.) }
+        ]
+    })
+}
+
 fn main() {
-    let mut app = App::new();
-    app.add_systems(Startup, step_a);
+    // let mut app = App::new();
+    
 }
