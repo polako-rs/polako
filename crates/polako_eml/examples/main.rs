@@ -12,7 +12,7 @@ pub struct Rect {
 
 
 
-impl rect_construct::Methods {
+impl rect_construct::Protocols {
     pub fn push_text<'c, S: AsRef<str>>(
         &self,
         world: &mut World,

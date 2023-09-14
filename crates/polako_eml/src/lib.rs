@@ -160,7 +160,7 @@ impl Element for Elem {
 }
 
 
-impl elem_construct::Methods {
+impl elem_construct::Protocols {
     #[allow(unused_variables)]
     pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotSupported<msg::TextAsChild> {
         NotSupported(msg::TextAsChild)

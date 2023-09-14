@@ -105,7 +105,7 @@ impl EmlNode {
                     chs = match child {
                         EmlChild::Literal(lit) => {
                             let assign = quote_spanned!{ lit.span()=> 
-                                let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
+                                let _: Valid<()> = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
                             };
                             quote! { #chs #assign }
                                 
@@ -114,7 +114,7 @@ impl EmlNode {
                             let span = ch.tag.span();
                             let ch = ch.build(cst, eml, false, strict)?;
                             let assign = quote_spanned!{ span=>
-                                let _: Valid<()> = <<#tag as #cst::Construct>::Methods as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
+                                let _: Valid<()> = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
                             };
                             quote! { #chs 
                                 let e_child = { #ch };

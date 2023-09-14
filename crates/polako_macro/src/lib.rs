@@ -10,7 +10,7 @@ use syn::{parse_macro_input, DeriveInput};
 
 const DEFAULT_CONSTRUCT_FIELD_LIMIT: u8 = 8;
 
-use constructivist::derive::{ConstructMode, Constructable, Methods};
+use constructivist::derive::{ConstructMode, Constructable, Protocols};
 use constructivist::genlib;
 
 mod eml;
@@ -84,13 +84,13 @@ pub fn constructable(input: pm::TokenStream) -> pm::TokenStream {
     pm::TokenStream::from(stream)
 }
 #[proc_macro_attribute]
-pub fn construct_methods(_: pm::TokenStream, input: pm::TokenStream) -> pm::TokenStream {
+pub fn constructprotocols(_: pm::TokenStream, input: pm::TokenStream) -> pm::TokenStream {
     let input = parse_macro_input!(input as ItemImpl);
-    let methods = match Methods::from_input(input) {
+    let protocols = match Protocols::from_input(input) {
         Err(e) => return pm::TokenStream::from(e.to_compile_error()),
         Ok(r) => r,
     };
-    let stream = match methods.build(lib("constructivism")) {
+    let stream = match protocols.build(lib("constructivism")) {
         Err(e) => return pm::TokenStream::from(e.to_compile_error()),
         Ok(c) => c,
     };
