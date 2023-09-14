@@ -8,7 +8,7 @@ use quote::{quote, format_ident};
 use syn::ItemImpl;
 use syn::{parse_macro_input, DeriveInput};
 
-const DEFAULT_CONSTRUCT_FIELD_LIMIT: u8 = 16;
+const DEFAULT_CONSTRUCT_FIELD_LIMIT: u8 = 8;
 
 use constructivist::derive::{ConstructMode, Constructable, Methods};
 use constructivist::genlib;

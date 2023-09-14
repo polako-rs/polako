@@ -10,7 +10,7 @@ pub struct Div {
 }
 
 
-fn div(In((_this, _model, content)): BuildArgs<Div>) -> Builder<Elem> {
+fn div(BuildArgs { content, .. }: BuildArgs<Div>) -> Builder<Elem> {
     build! {
         Elem [[ content ]]
     }
@@ -35,7 +35,7 @@ pub struct TextElement {
 #[extends(Div)]
 pub struct Bold { }
 
-fn bold(In((_this, _model, content)): BuildArgs<Bold>) -> Builder<Div> {
+fn bold(BuildArgs { content, .. }:  BuildArgs<Bold>) -> Builder<Div> {
     build! {
         Div [[ content ]]
     }
@@ -46,10 +46,10 @@ fn bold(In((_this, _model, content)): BuildArgs<Bold>) -> Builder<Div> {
 #[extends(Div)]
 pub struct Label { text: String }
 
-fn label(In((this, model, _content)): BuildArgs<Label>, mut commands: Commands) -> Builder<Div> {
-    commands.entity(this).insert(TextElement { text: "".to_string() });
+fn label(BuildArgs { model, mut ctx, .. }: BuildArgs<Label>) -> Builder<Div> {
+    ctx.insert(TextElement { text: "".to_string() });
     build! { 
-        Div {{ model }}
+        Div(model)
     }
 }
 
@@ -72,7 +72,7 @@ pub struct Quote {
 
 }
 
-fn quote(In((_this, _model, content)): BuildArgs<Quote>) -> Builder<Div> {
+fn quote(BuildArgs { content, .. }: BuildArgs<Quote>) -> Builder<Div> {
     build! {
         Div [
             Bold ["Quote:"],
@@ -88,9 +88,8 @@ pub struct Field {
     label: String
 }
 
-fn field(In((_this, model, _content)): BuildArgs<Field>, q: Query<&Field>) -> Builder<Div> {
-    let f = q.get(model.entity).unwrap();
-    let label = f.label.clone();
+fn field(BuildArgs { model, mut ctx, .. }: BuildArgs<Field>) -> Builder<Div> {
+    let label = ctx.component::<Field>().label.clone();
     build! {
         Div [
             Label { text: label },

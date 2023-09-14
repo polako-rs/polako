@@ -33,11 +33,9 @@ impl Element {
             impl #eml::Build for #build {
                 type Element = #ty;
                 fn build(world: &mut #bevy::World, this: Entity, model: #eml::EntityComponent<Self::Element>, content: Vec<#bevy::Entity>) {
-                    let mut func = #bevy::IntoSystem::into_system(#func).pipe(#eml::validate_builder::<#ty, _>);
-                    func.initialize(world);
-                    let eml = func.run((this, model, content), world);
-                    eml.write(world, this);
-                    func.apply_deferred(world)
+                    #[allow(unused_imports)]
+                    use #eml::ElementBuilder;
+                    #func.build_element(world, this, model, content);
                 }
             }
             impl #eml::Element for #ty {

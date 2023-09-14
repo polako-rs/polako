@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::DerefMut};
 
-use bevy::{prelude::*, ecs::system::Command};
+use bevy::{prelude::*, ecs::{system::Command, world::EntityMut}};
 use polako_constructivism::{*, traits::Construct};
 
 
@@ -111,8 +111,6 @@ impl<C: Element> View<C> {
     }
 }
 
-pub type BuildArgs<T> = In<(Entity, EntityComponent<T>, Vec<Entity>)>;
-
 pub struct Eml<Root: Element>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
 
 unsafe impl<Root: Element> Send for Eml<Root> { }
@@ -194,3 +192,64 @@ pub fn validate_builder<E: Element + Extends<R>, R: Element>(In(builder): In<Bui
 // pub fn assign_views(
 //     views: Query<&View
 // )
+
+pub struct Context<'w, E: Element> {
+    pub world: &'w mut World,
+    pub this: Entity,
+    marker: PhantomData<E>,
+}
+
+impl<'w, E: Element> Context<'w, E> {
+    pub fn insert<C: Bundle>(&mut self, bundle: C) {
+        let mut entity = self.world.entity_mut(self.this);
+        entity.insert(bundle);
+    }
+    pub fn component<'a: 'w, C: Component>(&'a mut self) -> EntityComponentMut<'w, 'a, C> {
+        let entity = self.world.entity_mut(self.this);
+        EntityComponentMut {
+            entity, marker: PhantomData
+        }
+    }
+
+}
+
+pub struct EntityComponentMut<'w, 'a, C: Component> {
+    entity: EntityMut<'w>,
+    marker: PhantomData<(&'a (), C)>
+}
+
+impl<'w, 'a, C: Component> std::ops::Deref for EntityComponentMut<'w, 'a, C> {
+    type Target = C;
+    fn deref(&self) -> &Self::Target {
+        self.entity.get().as_ref().unwrap()
+    }
+}
+
+pub struct BuildArgs<'w, E: Element> {
+    pub this: Entity,
+    pub model: EntityComponent<E>,
+    pub content: Vec<Entity>,
+    pub ctx: Context<'w, E>,
+
+}
+
+pub trait ElementBuilder<E: Element> {
+    fn build_element(&self, world: &mut World, this: Entity, model: EntityComponent<E>, content: Vec<Entity>);
+}
+
+
+impl<F, E: Element, R> ElementBuilder<E> for F
+where
+    R: Element,
+    E: Element + Extends<R>,
+    F: Fn(BuildArgs<E>) -> Builder<R>,
+{
+    fn build_element(&self, world: &mut World, this: Entity, model: EntityComponent<E>, content: Vec<Entity>) {
+            let args = BuildArgs {
+                this, model, content, ctx: Context { world, this, marker: PhantomData }
+            };
+            let eml = self(args).eml();
+            eml.write(world, this);
+    }
+}
+

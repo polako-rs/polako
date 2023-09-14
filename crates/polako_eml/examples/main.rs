@@ -37,14 +37,21 @@ impl Build for InstallRect {
 #[derive(Component, Element)]
 #[build(div)]
 #[extends(Rect)]
+// #[derive(Component)]
 pub struct Div {
     background: Color,
 }
 
+fn takes_builder<E: Element, B: ElementBuilder<E>>(builder: B) {
 
-fn div(
-    In((this, model, content)): BuildArgs<Div>
-) -> Builder<Rect> {
+}
+
+fn test_static_takes_builder() {
+    takes_builder(div);
+}
+
+
+fn div(BuildArgs { this, model, content, ..}: BuildArgs<Div>) -> Builder<Rect> {
     Builder::new(Eml::new(|_, _| { }))
 }
 

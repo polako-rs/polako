@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use quote::{quote, format_ident, quote_spanned};
 use proc_macro2::{token_stream, Ident, TokenStream, Span};
 
-use syn::{parse::Parse, Expr, Token, token, braced, bracketed, Lit, spanned::Spanned, LitStr};
+use syn::{parse::Parse, Expr, Token, token, braced, bracketed, Lit, spanned::Spanned, LitStr, parenthesized};
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -54,6 +54,7 @@ pub enum EmlChildren {
 }
 
 pub enum EmlArguments {
+    InstallView(Ident),
     View(Ident),
     Declared(Vec<EmlArgument>),
 }
@@ -133,7 +134,22 @@ impl EmlNode {
             }
         };
         let model = match &self.args {
-            // regular view association:
+            // make model-view
+            // build! {
+            //     Div(model)
+            // }
+            EmlArguments::InstallView(view) => if strict && as_root {
+                quote! {{
+                    let e_view = #view.as_view();
+                    let mut e_model = #view.as_model();
+                    e_model.for_view = __root__;
+                    world.entity_mut(#view.entity).insert((e_model, e_view));
+                    (#view.into_base(), __root__)
+               }}
+            } else {
+                throw!(tag, "InstallView only supported on the root element of build! macro.");
+            },
+            // model bypassing:
             // build! { 
             //     Div [
             //         Label {{ model }}
@@ -144,23 +160,11 @@ impl EmlNode {
                     let e_this = world.spawn_empty().id();
                     (#model.into_base(), e_this)
                 }}
-            // element builder root
-            // build! {
-            //     Label {{ model }}
-            // }
-            } else if strict && as_root {
-                quote! {{
-                    let e_view = #model.as_view();
-                    let mut e_model = #model.as_model();
-                    e_model.for_view = __root__;
-                    world.entity_mut(#model.entity).insert((e_model, e_view));
-                    (#model.into_base(), __root__)
-                }}
+            
             } else {
-                throw!(tag, "View assigment only supported inside build! macro.");
-
+                throw!(tag, "Model bypassing only supported for nont-root elements in build! macro.");
             },
-            // do not assign view
+            // just do nothing for the build! empty root
             EmlArguments::Declared(v) if v.is_empty() && strict && as_root => quote! {{
                 let e_model = #eml::EntityComponent::new(__root__);
                 (e_model, __root__)                
@@ -223,7 +227,11 @@ impl Parse for EmlNode {
             input.parse::<Token![:]>()?;
             model = Some(input.parse()?);
         }
-        let args = if input.peek(token::Brace) {
+        let args = if input.peek(token::Paren) {
+            let content;
+            parenthesized!(content in input);
+            EmlArguments::InstallView(content.parse()?)
+        } else if input.peek(token::Brace) {
             let content;
             braced!(content in input);
             if content.peek(token::Brace) {
