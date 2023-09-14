@@ -1,5 +1,3 @@
-use std::path::Component;
-
 use element::Element;
 use eml::Eml;
 use proc_macro as pm;

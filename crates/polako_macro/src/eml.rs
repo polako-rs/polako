@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use quote::{quote, format_ident, quote_spanned};
-use proc_macro2::{token_stream, Ident, TokenStream, Span};
+use quote::{quote, quote_spanned};
+use proc_macro2::{Ident, TokenStream, Span};
 
 use syn::{parse::Parse, Expr, Token, token, braced, bracketed, Lit, spanned::Spanned, LitStr, parenthesized};
 
@@ -59,15 +59,6 @@ pub enum EmlArguments {
     Declared(Vec<EmlArgument>),
 }
 
-impl EmlArguments {
-    pub fn is_view(&self) -> bool {
-        match self {
-            Self::View(_) => true,
-            _ => false
-        }
-    }
-}
-
 pub struct EmlNode {
     pub tag: Ident,
     pub model: Option<Ident>,
@@ -105,7 +96,7 @@ impl EmlNode {
                     chs = match child {
                         EmlChild::Literal(lit) => {
                             let assign = quote_spanned!{ lit.span()=> 
-                                let _: Valid<()> = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
+                                let _: Implemented = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_text(world, &mut e_children, #lit);
                             };
                             quote! { #chs #assign }
                                 
@@ -114,7 +105,7 @@ impl EmlNode {
                             let span = ch.tag.span();
                             let ch = ch.build(cst, eml, false, strict)?;
                             let assign = quote_spanned!{ span=>
-                                let _: Valid<()> = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_model(world, &mut e_children, e_child);
+                                let _: Implemented = <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance().push_content(world, &mut e_children, e_child);
                             };
                             quote! { #chs 
                                 let e_child = { #ch };
@@ -270,10 +261,6 @@ impl Parse for EmlNode {
     }
 }
 
-pub struct EntityComponent {
-    pub ident: Ident,
-    pub ty: Ident,
-}
 
 pub struct Eml {
     pub span: Span,

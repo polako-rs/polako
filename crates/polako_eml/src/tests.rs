@@ -18,10 +18,10 @@ fn div(BuildArgs { content, .. }: BuildArgs<Div>) -> Builder<Elem> {
 
 
 impl div_construct::Protocols {
-    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Valid<()> {
+    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Implemented {
         let entity = world.spawn(TextElement { text: text.as_ref().to_string() }).id();
         content.push(entity);
-        Valid(())
+        Implemented
     }
 }
 

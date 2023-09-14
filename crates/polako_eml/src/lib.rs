@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::DerefMut};
+use std::marker::PhantomData;
 
 use bevy::{prelude::*, ecs::{system::Command, world::EntityMut}};
 use polako_constructivism::{*, traits::Construct};
@@ -8,7 +8,8 @@ use polako_constructivism::{*, traits::Construct};
 mod tests;
 
 pub mod msg {
-    pub struct TextAsChild;
+    pub struct TextAsContent;
+    pub struct ElementAsContent;
 }
 
 
@@ -139,8 +140,13 @@ pub trait Build {
 }
 
 
-pub struct Valid<T>(pub T);
-pub struct NotSupported<T>(pub T);
+pub struct Implemented;
+pub struct NotImplemented<T>(PhantomData<T>);
+impl<T> NotImplemented<T> {
+    pub fn new() -> Self {
+        Self (PhantomData)
+    }
+}
 
 #[derive(Component, Construct)]
 pub struct Elem {
@@ -150,7 +156,7 @@ pub struct Elem {
 pub struct BuildElem;
 impl Build for BuildElem {
     type Element = Elem;
-    fn build(world: &mut World, this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>) {
+    fn build(world: &mut World, _this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>) {
         world.entity_mut(model.entity).push_children(&content);
     }
 }
@@ -162,16 +168,15 @@ impl Element for Elem {
 
 impl elem_construct::Protocols {
     #[allow(unused_variables)]
-    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotSupported<msg::TextAsChild> {
-        NotSupported(msg::TextAsChild)
+    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotImplemented<msg::TextAsContent> {
+        NotImplemented::new()
     }
 
     #[allow(unused_variables)]
-    pub fn push_model<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> Valid<()> {
+    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> Implemented {
         content.push(model.entity);
-        Valid(())
+        Implemented
     }
-
 }
 
 pub struct Builder<T: Element>(Eml<T>);
@@ -253,3 +258,18 @@ where
     }
 }
 
+
+
+#[derive(Component, Mixin)]
+pub struct AcceptNoContent;
+
+impl<T: Singleton> acceptnocontent_construct::Protocols<T> {
+    #[allow(unused_variables)]
+    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> NotImplemented<msg::ElementAsContent> {
+        NotImplemented::new()
+    }
+    #[allow(unused_variables)]
+    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotImplemented<msg::TextAsContent> {
+        NotImplemented::new()
+    }
+}

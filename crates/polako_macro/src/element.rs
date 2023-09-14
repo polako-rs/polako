@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, TokenStream};
-use syn::{parse::Parse, DeriveInput, Type};
+use syn::DeriveInput;
 use quote::{quote, format_ident};
 
 macro_rules! throw {
@@ -23,7 +23,7 @@ impl Element {
         Ok(Self { build, ty })
     }
 
-    pub fn build(&self, cst: TokenStream, eml: TokenStream) -> syn::Result<TokenStream> {
+    pub fn build(&self, _cst: TokenStream, eml: TokenStream) -> syn::Result<TokenStream> {
         let func = &self.build;
         let ty = &self.ty;
         let build = format_ident!("Build{}Element", ty.to_string());
