@@ -2587,6 +2587,7 @@ dependencies = [
 name = "polako_constructivism"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "polako_macro",
 ]
 

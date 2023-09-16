@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, rc::Rc, cell::RefCell};
 
-use bevy::{prelude::*, ecs::{system::Command, world::EntityMut}};
+use bevy::{prelude::*, ecs::{system::{Command, CommandQueue}, world::EntityMut}};
 use polako_constructivism::{*, traits::Construct};
 
 
@@ -13,43 +13,38 @@ pub mod msg {
 }
 
 
-pub trait Element: Component + Construct + {
-    type Build: Build;
+pub trait Element: Component + Construct + Sized {
+    // type Builder: ElementBuilder<Self> + Singleton;
+
+    fn build_element(this: Model<Self>, content: Vec<Entity>) -> Blueprint<Self>;
 }
 
 
-pub struct EntityComponent<C: Element> {
+pub struct Model<C: Element> {
     pub entity: Entity,
     marker: PhantomData<C>
 }
 
-impl<C: Element> EntityComponent<C> {
+impl<C: Element> Model<C> {
     pub fn new(entity: Entity) -> Self {
-        EntityComponent { entity, marker: PhantomData }
-    }
-
-    pub fn as_view(&self) -> View<C> {
-        View { for_model: self.entity, marker: PhantomData }
-    }
-    pub fn as_model(&self) -> Model<C> {
-        Model { for_view: self.entity, marker: PhantomData }
+        Model { entity, marker: PhantomData }
     }
 }
 
-impl<C: Element> Copy for EntityComponent<C> {
+impl<C: Element> Copy for Model<C> {
     
 }
 
-impl<C: Element> std::fmt::Debug for EntityComponent<C> {
+impl<C: Element> std::fmt::Debug for Model<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f
-            .debug_struct("EntityComponent")
+            .debug_struct("Model")
             .field("entity", &self.entity)
             .finish()
     }
 }
 
-impl<C: Element> Clone for EntityComponent<C> {
+impl<C: Element> Clone for Model<C> {
     fn clone(&self) -> Self {
         Self {
             entity: self.entity,
@@ -58,61 +53,10 @@ impl<C: Element> Clone for EntityComponent<C> {
     }
 }
 
-pub trait IntoBase<T> {
-    fn into_base(self) -> T;
-}
-impl<B: Element, T: Element + Extends<B>> IntoBase<EntityComponent<B>> for EntityComponent<T> {
-    fn into_base(self) -> EntityComponent<B> {
-        EntityComponent::new(self.entity)
-    }
-}
-
-#[derive(Component)]
-pub struct Model<C: Element> {
-    pub for_view: Entity,
-    marker: PhantomData<C>
-}
-
-impl<C: Element> Model<C> {
-    pub fn new(for_view: Entity) -> Self {
-        Self {
-            for_view,
-            marker: PhantomData
-        }
-    }
-}
-
-impl<C: Element> std::fmt::Debug for Model<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f
-            .debug_struct("EntityComponent")
-            .field("for_view", &self.for_view)
-            .finish()
-    }
-}
-
-impl<C: Element> Clone for Model<C> {
-    fn clone(&self) -> Self {
-        Self {
-            for_view: self.for_view,
-            marker: PhantomData
-        }
-    }
-}
-
-
-#[derive(Component)]
-pub struct View<C: Element> {
-    pub for_model: Entity,
-    marker: PhantomData<C>
-}
-impl<C: Element> View<C> {
-    pub fn new(entity: Entity) -> Self {
-        Self { for_model: entity, marker: PhantomData }
-    }
-}
-
-pub struct Eml<Root: Element>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
+pub struct Eml<Root: Element>(
+    Box<dyn FnOnce(&mut World, Entity)>,
+    PhantomData<Root>
+);
 
 unsafe impl<Root: Element> Send for Eml<Root> { }
 unsafe impl<Root: Element> Sync for Eml<Root> { }
@@ -122,23 +66,16 @@ impl<Root: Element> Eml<Root> {
         Eml(Box::new(body), PhantomData)
     }
     pub fn write(self, world: &mut World, entity: Entity) {
-        (self.0)(world, entity)
+        (self.0)(world, entity);
     }
 }
 
 impl<Root: Element> Command for Eml<Root> {
     fn apply(self, world: &mut World) {
         let entity = world.spawn_empty().id();
-        (self.0)(world, entity)
+        self.write(world, entity)
     }
 }
-
-
-pub trait Build {
-    type Element: Element;
-    fn build(world: &mut World, this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>);
-}
-
 
 pub struct Implemented;
 pub struct NotImplemented<T>(PhantomData<T>);
@@ -153,18 +90,14 @@ pub struct Elem {
 
 }
 
-pub struct BuildElem;
-impl Build for BuildElem {
-    type Element = Elem;
-    fn build(world: &mut World, _this: Entity, model: EntityComponent<Self::Element>, content: Vec<Entity>) {
-        world.entity_mut(model.entity).push_children(&content);
+impl Element for Elem {
+    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+        Blueprint::new(Eml::new(move |world, entity| {
+            world.entity_mut(entity).push_children(&content);
+        }))
+        
     }
 }
-
-impl Element for Elem {
-    type Build = BuildElem;
-}
-
 
 impl elem_construct::Protocols {
     #[allow(unused_variables)]
@@ -173,14 +106,14 @@ impl elem_construct::Protocols {
     }
 
     #[allow(unused_variables)]
-    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> Implemented {
+    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Implemented {
         content.push(model.entity);
         Implemented
     }
 }
 
-pub struct Builder<T: Element>(Eml<T>);
-impl<T: Element> Builder<T> {
+pub struct Blueprint<T: Element>(Eml<T>);
+impl<T: Element> Blueprint<T> {
     pub fn new(eml: Eml<T>) -> Self {
         Self(eml)
     }
@@ -189,75 +122,47 @@ impl<T: Element> Builder<T> {
     }
 }
 
-pub fn validate_builder<E: Element + Extends<R>, R: Element>(In(builder): In<Builder<R>>) -> Eml<R> {
-    builder.eml()
+
+#[derive(Clone)]
+pub struct CommandStackItem {
+    stack: CommandStack,
+    idx: usize,
 }
 
-
-// pub fn assign_views(
-//     views: Query<&View
-// )
-
-pub struct Context<'w, E: Element> {
-    pub world: &'w mut World,
-    pub this: Entity,
-    marker: PhantomData<E>,
-}
-
-impl<'w, E: Element> Context<'w, E> {
-    pub fn insert<C: Bundle>(&mut self, bundle: C) {
-        let mut entity = self.world.entity_mut(self.this);
-        entity.insert(bundle);
+impl CommandStackItem {
+    pub fn update<C: Component + Default, F: FnOnce(&mut C) + Send + Sync + 'static>(&mut self, entity: Entity, func: F) {
+        self.entity(entity, move |e| {
+            if e.contains::<C>() {
+                func(e.get_mut().as_mut().unwrap());
+            } else {
+                let mut component = C::default();
+                func(&mut component);
+                e.insert(component);
+            }
+        })
     }
-    pub fn component<'a: 'w, C: Component>(&'a mut self) -> EntityComponentMut<'w, 'a, C> {
-        let entity = self.world.entity_mut(self.this);
-        EntityComponentMut {
-            entity, marker: PhantomData
-        }
+    pub fn insert<B: Bundle>(&mut self, entity: Entity, bundle: B) {
+        self.entity(entity, move |e| { e.insert(bundle); });
     }
-
-}
-
-pub struct EntityComponentMut<'w, 'a, C: Component> {
-    entity: EntityMut<'w>,
-    marker: PhantomData<(&'a (), C)>
-}
-
-impl<'w, 'a, C: Component> std::ops::Deref for EntityComponentMut<'w, 'a, C> {
-    type Target = C;
-    fn deref(&self) -> &Self::Target {
-        self.entity.get().as_ref().unwrap()
+    pub fn entity<F: FnOnce(&mut EntityMut) + Send + Sync + 'static>(&mut self, entity: Entity, func: F) {
+        let mut borrow = self.stack.0.borrow_mut();
+        let queue = borrow.get_mut(self.idx).unwrap();
+        queue.push(move |world: &mut World| func(&mut world.entity_mut(entity)))
     }
 }
 
-pub struct BuildArgs<'w, E: Element> {
-    pub this: Entity,
-    pub model: EntityComponent<E>,
-    pub content: Vec<Entity>,
-    pub ctx: Context<'w, E>,
+#[derive(Clone, Resource, Default)]
+pub struct CommandStack(Rc<RefCell<Vec<CommandQueue>>>);
+unsafe impl Send for CommandStack { }
+unsafe impl Sync for CommandStack { }
 
-}
-
-pub trait ElementBuilder<E: Element> {
-    fn build_element(&self, world: &mut World, this: Entity, model: EntityComponent<E>, content: Vec<Entity>);
-}
-
-
-impl<F, E: Element, R> ElementBuilder<E> for F
-where
-    R: Element,
-    E: Element + Extends<R>,
-    F: Fn(BuildArgs<E>) -> Builder<R>,
-{
-    fn build_element(&self, world: &mut World, this: Entity, model: EntityComponent<E>, content: Vec<Entity>) {
-            let args = BuildArgs {
-                this, model, content, ctx: Context { world, this, marker: PhantomData }
-            };
-            let eml = self(args).eml();
-            eml.write(world, this);
+impl CommandStack {
+    pub fn push(&mut self) -> CommandStackItem {
+        let idx = self.0.borrow().len();
+        self.0.borrow_mut().push(CommandQueue::default());
+        CommandStackItem { idx, stack: self.clone() }
     }
 }
-
 
 
 #[derive(Component, Mixin)]
@@ -265,7 +170,7 @@ pub struct AcceptNoContent;
 
 impl<T: Singleton> acceptnocontent_construct::Protocols<T> {
     #[allow(unused_variables)]
-    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: EntityComponent<E>) -> NotImplemented<msg::ElementAsContent> {
+    pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> NotImplemented<msg::ElementAsContent> {
         NotImplemented::new()
     }
     #[allow(unused_variables)]
