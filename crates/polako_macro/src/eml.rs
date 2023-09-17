@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
+use constructivist::{construct::*, context::Context};
 
 use syn::{
-    braced, bracketed, parenthesized, parse::Parse, spanned::Spanned, token, Expr, Lit, LitStr,
+    bracketed, parse::Parse, spanned::Spanned, token, Lit, LitStr,
     Token,
 };
-
-use crate::lib;
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -16,59 +15,18 @@ macro_rules! throw {
     };
 }
 
-pub struct EmlArg {
-    pub ident: Ident,
-    pub value: Expr,
+pub trait EmlParams {
+    fn build_patch(&self, _: &EmlContext, tag: &Ident, this: &TokenStream, patch_empty: bool) -> syn::Result<TokenStream>;
+    fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream>;
 }
 
-impl Parse for EmlArg {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let ident = input.parse()?;
-        let value = if input.peek(Token![:]) {
-            input.parse::<Token![:]>()?;
-            input.parse()?
-        } else {
-            syn::parse2(quote! { true })?
-        };
-        Ok(EmlArg { ident, value })
-    }
-}
-
-pub struct EmlArgs(pub Vec<EmlArg>);
-impl Parse for EmlArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.is_empty() {
-            return Ok(EmlArgs(vec![]));
-        }
-        Ok(EmlArgs(
-            input
-                .parse_terminated(EmlArg::parse, Token![,])?
-                .into_iter()
-                .collect(),
-        ))
-    }
-}
-impl EmlArgs {
-    pub fn empty() -> Self {
-        Self(vec![])
-    }
-    pub fn parenthesized(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        parenthesized!(content in input);
-        content.parse()
-    }
-
-    pub fn braced(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        braced!(content in input);
-        content.parse()
-    }
-    pub fn build_patch(&self, _: &EmlContext, tag: &Ident, this: &TokenStream, patch_empty: bool) -> syn::Result<TokenStream> {
+impl EmlParams for Params {
+    fn build_patch(&self, _: &EmlContext, tag: &Ident, this: &TokenStream, patch_empty: bool) -> syn::Result<TokenStream> {
         let mut body = quote! { };
-        if !patch_empty && self.0.is_empty() {
+        if !patch_empty && self.items.is_empty() {
             return Ok(body);
         }
-        for arg in self.0.iter() {
+        for arg in self.items.iter() {
             let ident = &arg.ident;
             let value = &arg.value;
             body = quote! { #body
@@ -84,16 +42,13 @@ impl EmlArgs {
             #body
         }})
     }
-    pub fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
-        let cst = &ctx.cst;
-        let mut build = quote! {};
-        for arg in self.0.iter() {
-            let ident = &arg.ident;
-            let value = &arg.value;
-            build = quote! { #build #ident: #value, };
-        }
-        Ok(quote! { #cst::construct!(#tag { #build }) })
-
+    fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
+        let construct = Construct {
+            ty: syn::parse2(quote! { #tag })?,
+            flattern: true,
+            params: self.clone()
+        };
+        construct.build(&ctx.context)
     }
 }
 
@@ -123,7 +78,7 @@ pub enum EmlContent {
 
 impl EmlContent {
     pub fn build(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
-        let cst = &ctx.cst;
+        let cst = &ctx.path("constructivism");
         Ok(match self {
             EmlContent::Provided(ident) => quote! { #ident },
             EmlContent::Declared(children) => {
@@ -194,13 +149,13 @@ impl Parse for EmlContent {
 // Div + Style(width: Val::Percent(100.))
 pub struct EmlPatch {
     pub ident: Ident,
-    pub items: EmlArgs,
+    pub items: Params,
 }
 
 impl Parse for EmlPatch {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let ident: Ident = input.parse()?;
-        let items = EmlArgs::parenthesized(input)?;
+        let items = Params::parenthesized(input)?;
         Ok(EmlPatch { ident, items })
     }
 }
@@ -215,16 +170,16 @@ impl EmlPatch {
 // Div + Style
 pub struct EmlComponent {
     pub ident: Ident,
-    pub items: EmlArgs,
+    pub items: Params,
 }
 
 impl Parse for EmlComponent {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let ident = input.parse()?;
         let items = if input.peek(token::Brace) {
-            EmlArgs::braced(input)?
+            Params::braced(input)?
         } else {
-            EmlArgs::empty()
+            Params::empty()
         };
         Ok(EmlComponent { ident, items })
     }
@@ -291,7 +246,7 @@ pub enum EmlRoot {
     Element(EmlNode),
     Super {
         tag: Ident,
-        overrides: EmlArgs,
+        overrides: Params,
         mixins: EmlMixins,
         children: EmlContent,
     },
@@ -308,9 +263,9 @@ impl Parse for EmlRoot {
                 throw!(sup, "Expected Super");
             }
             let overrides = if input.peek(token::Paren) {
-                EmlArgs::parenthesized(input)?            
+                Params::parenthesized(input)?            
             } else {
-                EmlArgs::empty()
+                Params::empty()
             };
             let mixins = input.parse()?;
             let children = input.parse()?;
@@ -328,9 +283,15 @@ impl Parse for EmlRoot {
 }
 
 pub struct EmlContext {
-    cst: TokenStream,
-    eml: TokenStream,
+    context: Context,
     strict: bool,
+}
+
+impl std::ops::Deref for EmlContext {
+    type Target = Context;
+    fn deref(&self) -> &Self::Target {
+        &self.context
+    }
 }
 
 impl EmlRoot {
@@ -372,7 +333,7 @@ impl EmlRoot {
                 if ctx.strict {
                     throw!(node.tag, "Only Tag::Super available as root inside the build! macro.");
                 }
-                let eml = &ctx.eml;
+                let eml = &ctx.path("eml");
                 let body = node.build(ctx, true)?;
                 let tag = &node.tag;
                 Ok(quote! { 
@@ -386,12 +347,12 @@ impl EmlRoot {
     fn build_super( &self,
         ctx: &EmlContext,
         tag: &Ident,
-        overrides: &EmlArgs,
+        overrides: &Params,
         mixins: &EmlMixins,
         content: &EmlContent,
     ) -> syn::Result<TokenStream> {
-        let eml = &ctx.eml;
-        let cst = &ctx.cst;
+        let eml = &ctx.path("eml");
+        let cst = &ctx.path("constructivism");
         let build_content = content.build(ctx, tag)?;
         let apply_patches = overrides.build_patch(ctx, tag, &quote! { __root__ }, false)?;
         let apply_mixins = mixins.build(ctx, &quote! { __root__ })?;
@@ -410,7 +371,7 @@ impl EmlRoot {
 pub struct EmlNode {
     pub tag: Ident,
     pub model: Option<Ident>,
-    pub args: EmlArgs,
+    pub args: Params,
     pub mixins: EmlMixins,
     pub children: EmlContent,
 }
@@ -447,7 +408,7 @@ impl EmlNode {
         as_root: bool,
     ) -> syn::Result<TokenStream> {
         let tag = &self.tag;
-        let eml = &ctx.eml;
+        let eml = &ctx.path("eml");
         let content = self.children.build(ctx, tag)?;
         let construct = self.args.build_construct(ctx, tag)?;
         let model = if let Some(model) = &self.model {
@@ -488,9 +449,9 @@ impl Parse for EmlNode {
             model = Some(input.parse()?);
         }
         let args = if input.peek(token::Brace) {
-            EmlArgs::braced(input)?
+            Params::braced(input)?
         } else {
-            EmlArgs::empty()
+            Params::empty()
         };
         let mixins = input.parse()?;
         let children = input.parse()?;
@@ -538,9 +499,9 @@ impl Eml {
         let mut body = quote! {};
         let models = self.fetch_models()?;
         let mut root_ty = None;
-        let cst = lib("constructivism");
-        let eml = lib("eml");
-        let ctx = EmlContext { eml: eml.clone(), cst: cst.clone(), strict: self.strict };
+        
+        let ctx = EmlContext { context: Context::new("polako"), strict: self.strict };
+        let eml = ctx.path("eml");
         for (model, (tag, is_root)) in models.iter() {
             if *is_root {
                 body = quote! { #body

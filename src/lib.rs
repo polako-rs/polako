@@ -7,7 +7,7 @@ pub mod constructivism {
     pub mod prelude {
         pub use polako_macro::*;
         pub use polako_constructivism::{
-            Construct, ConstructItem, Mixin, protocols, construct
+            Construct, ConstructItem, Mixin, protocols
         };
     }
     pub use polako_constructivism::*;
