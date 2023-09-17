@@ -234,7 +234,7 @@ impl EmlComponent {
     pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
         let construct = self.items.build_construct(ctx, &self.ident)?;
         Ok(quote! {
-            world.entity_mut(#this).insert(#construct)
+            world.entity_mut(#this).insert(#construct);
         })
     }
 }
@@ -411,6 +411,7 @@ pub struct EmlNode {
     pub tag: Ident,
     pub model: Option<Ident>,
     pub args: EmlArgs,
+    pub mixins: EmlMixins,
     pub children: EmlContent,
 }
 
@@ -465,12 +466,14 @@ impl EmlNode {
                 #eml::Model::<#tag>::new(__entity__)
             }}
         };
+        let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;
             <#tag as #eml::Element>::build_element(__model__, __content__)
                 .eml()
                 .write(world, __model__.entity);
+            #apply_mixins
             __model__
         }})
     }
@@ -489,11 +492,13 @@ impl Parse for EmlNode {
         } else {
             EmlArgs::empty()
         };
+        let mixins = input.parse()?;
         let children = input.parse()?;
         Ok(EmlNode {
             tag,
             model,
             args,
+            mixins,
             children,
         })
     }

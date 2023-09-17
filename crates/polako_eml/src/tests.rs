@@ -63,15 +63,6 @@ impl Element for Bold {
     }
 }
 
-#[derive(Component, Construct)]
-#[extends(Div)]
-pub struct UiNode { }
-impl Element for UiNode {
-    fn build_element(_: Model<Self>, _: Vec<Entity>) -> Blueprint<Self> {
-        blueprint!{ UiNode::Super + NodeBundle }
-    }
-}
-
 // #[derive(Component, Element)]
 // #[extends(Div)]
 // #[build(quote)]
@@ -145,13 +136,86 @@ fn test_bold_text() {
     assert_eq!("bold", &world.query::<&TextElement>().single(world).font);
 }
 
+
+#[derive(Component, Construct)]
+#[extends(Div)]
+pub struct UiNode { }
+impl Element for UiNode {
+    fn build_element(_: Model<Self>, _: Vec<Entity>) -> Blueprint<Self> {
+        blueprint!{ UiNode::Super + NodeBundle }
+    }
+}
 #[test]
-fn test_patch_blueprint() {
+fn test_blueprint_patch_self() {
     let mut app = App::new();
     let eml = eml! { UiNode };
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&UiNode, &Div, &Node)>().iter(world).len());
+}
+#[derive(Component, Default)]
+struct TestComponent {
+    value: String
+}
+#[derive(Component, Construct)]
+#[extends(Div)]
+struct MixPatch;
+impl Element for MixPatch {
+    fn build_element(_: Model<Self>, _: Vec<Entity>) -> Blueprint<Self> {
+        blueprint! {
+            MixPatch::Super + TestComponent(value: "mix_patch")
+        }
+    }
+}
+#[test]
+fn test_blueprint_mix_patch() {
+    let mut app = App::new();
+    let eml = eml! { MixPatch };
+    eml.apply(&mut app.world);
+    let world = &mut app.world;
+    assert_eq!(1, world.query::<(&MixPatch, &TestComponent)>().iter(world).len());
+    assert_eq!("mix_patch", &world.query::<&TestComponent>().single(world).value);
+}
+#[derive(Component, Construct)]
+#[extends(Div)]
+struct MixConstruct;
+impl Element for MixConstruct {
+    fn build_element(_: Model<Self>, _: Vec<Entity>) -> Blueprint<Self> {
+        blueprint! {
+            MixConstruct::Super + Name { value: "mix_construct" }
+        }
+    }
+}
+#[test]
+fn test_blueprint_mix_construct() {
+    let mut app = App::new();
+    let eml = eml! { MixConstruct };
+    eml.apply(&mut app.world);
+    let world = &mut app.world;
+    assert_eq!(1, world.query::<(&MixConstruct, &Name)>().iter(world).len());
+    assert_eq!("mix_construct", world.query::<&Name>().single(world).as_str());
+
+}
+
+#[test]
+fn test_eml_mix_construct() {
+    let mut app = App::new();
+    let eml = eml! { Div + Name { value: "hello" } };
+    eml.apply(&mut app.world);
+    let world = &mut app.world;
+    assert_eq!(1, world.query::<(&Div, &Name)>().iter(world).len());
+    assert_eq!("hello", world.query::<&Name>().single(world).as_str());
+}
+
+
+#[test]
+fn test_eml_mix_patch() {
+    let mut app = App::new();
+    let eml = eml! { Div + TestComponent(value: "world") };
+    eml.apply(&mut app.world);
+    let world = &mut app.world;
+    assert_eq!(1, world.query::<(&Div, &TestComponent)>().iter(world).len());
+    assert_eq!("world", &world.query::<&TestComponent>().single(world).value);
 }
 
 
