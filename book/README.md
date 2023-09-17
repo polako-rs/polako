@@ -6,7 +6,7 @@ Lets say we have this elements definition:
 ```rust
 // the Div itself
 #[derive(Component, Element)]
-#[extends(Elem)]
+#[extend(Elem)]
 #[build(div)]
 pub struct Div {
     #[default(Color::NONE)]

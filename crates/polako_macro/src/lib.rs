@@ -44,7 +44,7 @@ fn lib<S: AsRef<str>>(name: S) -> TokenStream {
     }
 }
 
-#[proc_macro_derive(Construct, attributes(extends, mixin, required, default))]
+#[proc_macro_derive(Construct, attributes(extend, mix, required, default))]
 pub fn derive_construct_item(input: pm::TokenStream) -> pm::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let constructable = match Constructable::from_derive(input, ConstructMode::object()) {

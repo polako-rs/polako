@@ -5,7 +5,7 @@
 // // 1. Define element.
 // #[rustfmt::skip]
 // #[derive(Component, Element)]   // - You need to derive at least Component and Element
-// #[extends(Elem)]                // - You have to extend element from another element
+// #[extend(Elem)]                // - You have to extend element from another element
 //                                 //   Polako comes single `Elem` element out of the box
 // #[build(my_element)]            // - You have to provide build function for Element
 // pub struct MyElement {}
@@ -41,7 +41,7 @@
 // }
 
 // #[derive(Component, Element)]
-// #[extends(Elem)]
+// #[extend(Elem)]
 // #[build(my_node)]
 // pub struct MyNode {}
 
@@ -85,8 +85,8 @@
 // // protocol. You can override it and forbid any content for example. Or use
 // // `AcceptNoContent` mixin provided by polako
 // #[derive(Component, Element)]
-// #[extends(Elem)]
-// #[mixin(AcceptNoContent)]
+// #[extend(Elem)]
+// #[mix(AcceptNoContent)]
 // #[build(dead_end)]
 // pub struct DeadEnd;
 
@@ -109,7 +109,7 @@
 // // 5. You can assign values to the fields from the `eml!`. Becouse of constructivism, it is possible
 // // to pass values to every component fields from the single definition.
 // #[derive(Component, Element)]
-// #[extends(MyElement)]
+// #[extend(MyElement)]
 // #[build(rect)]
 // pub struct Rect {
 //     pub position: Vec2,
@@ -120,7 +120,7 @@
 //     build! { Elem [[ content ]] }
 // }
 // #[derive(Component, Element)]
-// #[extends(Rect)]
+// #[extend(Rect)]
 // #[build(div)]
 // pub struct Div {
 //     pub background: Color

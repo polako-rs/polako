@@ -13,7 +13,7 @@
 // }
 
 // #[derive(Construct)]
-// #[extends(Node)]
+// #[extend(Node)]
 // pub struct Rect {
 //     size: (f32, f32)
 // }

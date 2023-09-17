@@ -31,8 +31,9 @@ fn setup(mut commands: Commands) {
     });
 }
 
+// #[element(Elem)]
 #[derive(Component, Construct)]
-#[extends(Elem)]
+#[extend(Elem)]
 pub struct Div {
     #[default(Color::NONE)]
     background: Color,
@@ -55,9 +56,10 @@ pub struct UiText {
     pub text_color: Color
 }
 
+// #[element(Div + UiText)]
 #[derive(Component, Construct)]
-#[extends(Div)]
-#[mixin(UiText)]
+#[extend(Div)]
+#[mix(UiText)]
 pub struct Label;
 impl Element for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
@@ -68,7 +70,7 @@ impl Element for Label {
 }
 
 #[derive(Component, Construct)]
-#[extends(Div)]
+#[extend(Div)]
 pub struct Body;
 impl Element for Body {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -87,7 +89,7 @@ impl Element for Body {
 }
 
 #[derive(Component, Construct)]
-#[extends(Div)]
+#[extend(Div)]
 pub struct Column;
 impl Element for Column {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -106,7 +108,7 @@ impl Element for Column {
 }
 
 #[derive(Component, Construct)]
-#[extends(Div)]
+#[extend(Div)]
 pub struct Row;
 impl Element for Row {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
