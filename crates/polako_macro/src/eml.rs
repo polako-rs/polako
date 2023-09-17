@@ -397,9 +397,9 @@ impl EmlRoot {
         let apply_mixins = mixins.build(ctx, &quote! { __root__ })?;
 
         Ok(quote!{
-            let __root_model__ = #eml::Model::new(__root__);
+            let __root_model__ = #eml::Model::<#tag>::new(__root__);
             #apply_patches;
-            <<#tag as #cst::Construct>::Extends as #eml::Element>::build_element(__root_model__, #build_content)
+            <<#tag as #cst::Construct>::Extends as #eml::Element>::build_element(#build_content)
                 .eml()
                 .write(world, __root__);
             #apply_mixins
@@ -470,7 +470,7 @@ impl EmlNode {
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;
-            <#tag as #eml::Element>::build_element(__model__, __content__)
+            <#tag as #eml::Element>::build_element(__content__)
                 .eml()
                 .write(world, __model__.entity);
             #apply_mixins

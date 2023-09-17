@@ -16,7 +16,7 @@ pub mod msg {
 pub trait Element: Component + Construct + Sized {
     // type Builder: ElementBuilder<Self> + Singleton;
 
-    fn build_element(this: Model<Self>, content: Vec<Entity>) -> Blueprint<Self>;
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self>;
 }
 
 
@@ -91,7 +91,7 @@ pub struct Elem {
 }
 
 impl Element for Elem {
-    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         Blueprint::new(Eml::new(move |world, entity| {
             world.entity_mut(entity).push_children(&content);
         }))

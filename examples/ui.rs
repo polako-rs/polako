@@ -39,7 +39,7 @@ pub struct Div {
     padding: f32,
 }
 impl Element for Div {
-    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Div::Super
             + NodeBundle
@@ -60,7 +60,7 @@ pub struct UiText {
 #[mixin(UiText)]
 pub struct Label;
 impl Element for Label {
-    fn build_element(_: Model<Self>, _: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Label::Super + TextBundle
         }
@@ -71,7 +71,7 @@ impl Element for Label {
 #[extends(Div)]
 pub struct Body;
 impl Element for Body {
-    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
             Body::Super
             + Style(
@@ -90,15 +90,17 @@ impl Element for Body {
 #[extends(Div)]
 pub struct Column;
 impl Element for Column {
-    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Column::Super + Style (
+            Column::Super
+            + Style (
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 align_content: AlignContent::Center,
                 row_gap: Val::Px(3.),
-            ) [[ content ]]
+            )
+            [[ content ]]
         }
     }
 }
@@ -107,15 +109,17 @@ impl Element for Column {
 #[extends(Div)]
 pub struct Row;
 impl Element for Row {
-    fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
-            Row::Super + Style (
+            Row::Super
+            + Style (
                 display: Display::Flex,
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
                 align_content: AlignContent::Center,
                 column_gap: Val::Px(3.),
-            ) [[ content ]]
+            )
+            [[ content ]]
         }
     }
 }
