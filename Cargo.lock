@@ -1249,6 +1249,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "constructivism"
+version = "0.0.1"
+dependencies = [
+ "constructivism_macro",
+ "tuple_utils",
+]
+
+[[package]]
+name = "constructivism_macro"
+version = "0.0.1"
+dependencies = [
+ "constructivist",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.31",
+ "toml",
+]
+
+[[package]]
 name = "constructivist"
 version = "0.0.1"
 dependencies = [
@@ -3157,6 +3176,12 @@ name = "ttf-parser"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a464a4b34948a5f67fddd2b823c62d9d92e44be75058b99939eae6c5b6960b33"
+
+[[package]]
+name = "tuple_utils"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffaaf9392ef73cd30828797152476aaa2fa37a17856934fa63d4843f34290e9"
 
 [[package]]
 name = "twox-hash"
