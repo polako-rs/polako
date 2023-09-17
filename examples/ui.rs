@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use polako::eml::*;
+use polako_constructivism::Is;
 
 fn main() {
     App::new()
@@ -37,24 +38,18 @@ pub struct Div {
     background: Color,
     padding: f32,
 }
-
 impl Element for Div {
     fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Div::Super + NodeBundle [[ content ]]
+            Div::Super
+            + NodeBundle
+            [[ content ]]
         }
     }
 }
 
 #[derive(Component, Mixin)]
 pub struct UiText {
-    pub text: String,
-    #[default(Color::hex("2f2f2f").unwrap())]
-    pub text_color: Color
-}
-
-#[derive(Component, Mixin)]
-pub struct UiText2 {
     pub text: String,
     #[default(Color::hex("2f2f2f").unwrap())]
     pub text_color: Color
@@ -78,13 +73,15 @@ pub struct Body;
 impl Element for Body {
     fn build_element(_: Model<Self>, content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
-            Body::Super + Style(
+            Body::Super
+            + Style(
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
                 justify_content: JustifyContent::Center,
                 align_content: AlignContent::Center,
                 align_items: AlignItems::Center,
-            ) [[ content ]]
+            )
+            [[ content ]]
         }
     }
 }
@@ -135,6 +132,11 @@ impl div_construct::Protocols {
         content.push(entity);
         Implemented
     }
+    // Only Div and elements extends Div can be content of the Div
+    pub fn push_content<E: Element + Is<Div>>(&self, _: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Implemented {
+        content.push(model.entity);
+        Implemented
+    }
 }
 
 // helpers for spawning text bundle
@@ -163,7 +165,7 @@ impl WithText for Text {
     }
 }
 
-/// bypases Div.background to BackgroundColor.0 when changed
+/// bypase Div.background to BackgroundColor.0 when changed
 /// and Div.padding to Style.padding
 fn div_system(
     mut colors: Query<(&Div, &mut Style, &mut BackgroundColor,), Changed<Div>>
@@ -174,7 +176,7 @@ fn div_system(
     });
 }
 
-/// UiText text value & color to Text.sections[0]
+/// bypass UiText text value & color to Text.sections[0] when changed
 fn ui_text_system(
     mut texts: Query<(&UiText, &mut Text), Changed<UiText>>
 ) {
