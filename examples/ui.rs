@@ -33,7 +33,7 @@ fn setup(mut commands: Commands) {
 
 // #[element(Elem)]
 #[derive(Component, Construct)]
-#[construct(Div -> Elem)]
+#[construct(Div -> Empty)]
 pub struct Div {
     #[default(Color::NONE)]
     background: Color,

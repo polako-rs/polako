@@ -3,7 +3,7 @@ use super::*;
 
 
 #[derive(Component, Construct)]
-#[construct(Div -> Elem)]
+#[construct(Div -> Empty)]
 pub struct Div {
 
 }

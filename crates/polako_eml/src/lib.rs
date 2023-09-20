@@ -86,12 +86,12 @@ impl<T> NotImplemented<T> {
 }
 
 #[derive(Component, Construct)]
-#[construct(Elem -> Nothing)]
-pub struct Elem {
+#[construct(Empty -> Nothing)]
+pub struct Empty {
 
 }
 
-impl Element for Elem {
+impl Element for Empty {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         Blueprint::new(Eml::new(move |world, entity| {
             world.entity_mut(entity).push_children(&content);
@@ -100,7 +100,7 @@ impl Element for Elem {
     }
 }
 
-impl ElemDesign {
+impl EmptyDesign {
     #[allow(unused_variables)]
     pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotImplemented<msg::TextAsContent> {
         NotImplemented::new()
