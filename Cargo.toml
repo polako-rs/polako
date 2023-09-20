@@ -13,9 +13,6 @@ members = [
     "crates/polako_constructivism",
     "crates/polako_macro",
     "crates/polako_eml",
-    "crates/constructivism",
-    "crates/constructivist",
-    "crates/constructivism_macro",
 ]
 
 
