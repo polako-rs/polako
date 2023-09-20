@@ -3,7 +3,7 @@ use super::*;
 
 
 #[derive(Component, Construct)]
-#[extend(Elem)]
+#[construct(Div -> Elem)]
 pub struct Div {
 
 }
@@ -17,7 +17,7 @@ impl Element for Div {
 }
 
 
-#[derive(Component, Mixin)]
+#[derive(Component, Segment)]
 pub struct TextElement {
     pub text: String,
     #[default(format!("regular"))]
@@ -30,7 +30,7 @@ impl Default for TextElement {
     }
 }
 
-impl div_construct::Protocols {
+impl DivDesign {
     pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Implemented {
         let entity = world.spawn(TextElement { text: text.as_ref().to_string(), ..default() }).id();
         content.push(entity);
@@ -40,8 +40,7 @@ impl div_construct::Protocols {
 
 
 #[derive(Component, Construct)]
-#[extend(Div)]
-#[mix(TextElement)]
+#[construct(Label -> TextElement -> Div)]
 pub struct Label;
 
 impl Element for Label {
@@ -53,7 +52,7 @@ impl Element for Label {
 }
 
 #[derive(Component, Construct)]
-#[extend(Label)]
+#[construct(Bold -> Label)]
 pub struct Bold { }
 impl Element for Bold {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
@@ -105,7 +104,7 @@ fn test_bold_text() {
 
 
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(UiNode -> Div)]
 pub struct UiNode { }
 impl Element for UiNode {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
@@ -125,7 +124,7 @@ struct TestComponent {
     value: String
 }
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(MixPatch -> Div)]
 struct MixPatch;
 impl Element for MixPatch {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
@@ -144,7 +143,7 @@ fn test_blueprint_mix_patch() {
     assert_eq!("mix_patch", &world.query::<&TestComponent>().single(world).value);
 }
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(MixConstruct -> Div)]
 struct MixConstruct;
 impl Element for MixConstruct {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {

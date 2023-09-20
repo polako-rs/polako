@@ -33,7 +33,7 @@ fn setup(mut commands: Commands) {
 
 // #[element(Elem)]
 #[derive(Component, Construct)]
-#[extend(Elem)]
+#[construct(Div -> Elem)]
 pub struct Div {
     #[default(Color::NONE)]
     background: Color,
@@ -49,7 +49,7 @@ impl Element for Div {
     }
 }
 
-#[derive(Component, Mixin)]
+#[derive(Component, Segment)]
 pub struct UiText {
     pub text: String,
     #[default(Color::hex("2f2f2f").unwrap())]
@@ -58,8 +58,7 @@ pub struct UiText {
 
 // #[element(Div + UiText)]
 #[derive(Component, Construct)]
-#[extend(Div)]
-#[mix(UiText)]
+#[construct(Label -> UiText -> Div)]
 pub struct Label;
 impl Element for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
@@ -70,7 +69,7 @@ impl Element for Label {
 }
 
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(Body -> Div)]
 pub struct Body;
 impl Element for Body {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -89,7 +88,7 @@ impl Element for Body {
 }
 
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(Column -> Div)]
 pub struct Column;
 impl Element for Column {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -108,7 +107,7 @@ impl Element for Column {
 }
 
 #[derive(Component, Construct)]
-#[extend(Div)]
+#[construct(Row -> Div)]
 pub struct Row;
 impl Element for Row {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -126,7 +125,7 @@ impl Element for Row {
     }
 }
 
-impl div_construct::Protocols {
+impl DivDesign {
     // Div can accpet string literals as content
     pub fn push_text<'c, S: AsRef<str>>(
         &self,

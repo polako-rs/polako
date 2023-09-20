@@ -89,7 +89,7 @@ impl EmlContent {
                         EmlChild::Literal(lit) => {
                             let assign = quote_spanned! { lit.span()=>
                                 let _: Implemented =
-                                    <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance()
+                                    <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance()
                                         .push_text(world, &mut __content__, #lit);
                             };
                             quote! { #content #assign }
@@ -99,7 +99,7 @@ impl EmlContent {
                             let ct = ch.build(ctx, false)?;
                             let assign = quote_spanned! { span=>
                                 let _: Implemented = 
-                                    <<#tag as #cst::Construct>::Protocols as #cst::Singleton>::instance()
+                                    <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance()
                                         .push_content(world, &mut __content__, __content_item__);
                             };
                             quote! { #content
@@ -360,7 +360,7 @@ impl EmlRoot {
         Ok(quote!{
             let __root_model__ = #eml::Model::<#tag>::new(__root__);
             #apply_patches;
-            <<#tag as #cst::Construct>::Extends as #eml::Element>::build_element(#build_content)
+            <<#tag as #cst::Construct>::Base as #eml::Element>::build_element(#build_content)
                 .eml()
                 .write(world, __root__);
             #apply_mixins

@@ -1,8 +1,8 @@
 use crate::*;
 use bevy::prelude::*;
 
-constructable! { NodeBundle() NodeBundle::default() }
-constructable! { TextBundle() TextBundle::default() }
-constructable! { Name (value: String) {
+derive_construct! { NodeBundle -> Nothing () NodeBundle::default() }
+derive_construct! { TextBundle -> Nothing () TextBundle::default() }
+derive_construct! { Name -> Nothing (value: String) {
     Name::new(value)
 }}

@@ -86,6 +86,7 @@ impl<T> NotImplemented<T> {
 }
 
 #[derive(Component, Construct)]
+#[construct(Elem -> Nothing)]
 pub struct Elem {
 
 }
@@ -99,7 +100,7 @@ impl Element for Elem {
     }
 }
 
-impl elem_construct::Protocols {
+impl ElemDesign {
     #[allow(unused_variables)]
     pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> NotImplemented<msg::TextAsContent> {
         NotImplemented::new()
@@ -165,10 +166,10 @@ impl CommandStack {
 }
 
 
-#[derive(Component, Mixin)]
+#[derive(Component, Segment)]
 pub struct AcceptNoContent;
 
-impl<T: Singleton> acceptnocontent_construct::Protocols<T> {
+impl<T> AcceptNoContentDesign<T> {
     #[allow(unused_variables)]
     pub fn push_content<E: Element>(&self, world: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> NotImplemented<msg::ElementAsContent> {
         NotImplemented::new()
