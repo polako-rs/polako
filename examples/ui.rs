@@ -42,7 +42,7 @@ pub struct Div {
 impl Element for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Div::Super
+            Div::Base
             + NodeBundle
             [[ content ]]
         }
@@ -63,7 +63,7 @@ pub struct Label;
 impl Element for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Label::Super + TextBundle
+            Label::Base + TextBundle
         }
     }
 }
@@ -74,7 +74,7 @@ pub struct Body;
 impl Element for Body {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
-            Body::Super
+            Body::Base
             + Style(
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
@@ -93,7 +93,7 @@ pub struct Column;
 impl Element for Column {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Column::Super
+            Column::Base
             + Style (
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
@@ -112,7 +112,7 @@ pub struct Row;
 impl Element for Row {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
-            Row::Super
+            Row::Base
             + Style (
                 display: Display::Flex,
                 flex_direction: FlexDirection::Row,
@@ -137,7 +137,7 @@ impl DivDesign {
         content.push(entity);
         Implemented
     }
-    // Only Div and elements extends Div can be content of the Div
+    // Only Div and elements based on Div can be content of the Div
     pub fn push_content<E: Element + Is<Div>>(&self, _: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Implemented {
         content.push(model.entity);
         Implemented

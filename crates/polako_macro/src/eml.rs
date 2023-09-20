@@ -244,7 +244,7 @@ impl EmlMixins {
 
 pub enum EmlRoot {
     Element(EmlNode),
-    Super {
+    Base {
         tag: Ident,
         overrides: Params,
         mixins: EmlMixins,
@@ -259,8 +259,8 @@ impl Parse for EmlRoot {
             input.parse::<Token![:]>()?;
             input.parse::<Token![:]>()?;
             let sup = input.parse::<Ident>()?;
-            if &sup.to_string() != "Super" {
-                throw!(sup, "Expected Super");
+            if &sup.to_string() != "Base" {
+                throw!(sup, "Expected Base");
             }
             let overrides = if input.peek(token::Paren) {
                 Params::parenthesized(input)?            
@@ -269,7 +269,7 @@ impl Parse for EmlRoot {
             };
             let mixins = input.parse()?;
             let children = input.parse()?;
-            Ok(EmlRoot::Super {
+            Ok(EmlRoot::Base {
                 tag,
                 overrides,
                 mixins,
@@ -298,7 +298,7 @@ impl EmlRoot {
     pub fn tag(&self) -> Ident {
         match self {
             EmlRoot::Element(elem) => elem.tag.clone(),
-            EmlRoot::Super { tag, .. } => tag.clone(),
+            EmlRoot::Base { tag, .. } => tag.clone(),
         }
     }
     pub fn fetch_models(
@@ -307,7 +307,7 @@ impl EmlRoot {
     ) -> syn::Result<()> {
         match self {
             EmlRoot::Element(node) => node.fetch_models(models, true),
-            EmlRoot::Super { children: EmlContent::Declared(items), .. } => {
+            EmlRoot::Base { children: EmlContent::Declared(items), .. } => {
                 for item in items.iter() {
                     if let EmlChild::Node(node) = item {
                         node.fetch_models(models, false)?
@@ -323,15 +323,15 @@ impl EmlRoot {
         ctx: &EmlContext,
     ) -> syn::Result<TokenStream> {
         match self {
-            EmlRoot::Super { tag, overrides, mixins, children } => {
+            EmlRoot::Base { tag, overrides, mixins, children } => {
                 if !ctx.strict {
-                    throw!(tag, "Tag::Super only available as root inside the build! macro.");
+                    throw!(tag, "Tag::Base only available as root inside the build! macro.");
                 }
                 self.build_super(ctx, tag, overrides, mixins, children)
             },
             EmlRoot::Element(node) => {
                 if ctx.strict {
-                    throw!(node.tag, "Only Tag::Super available as root inside the build! macro.");
+                    throw!(node.tag, "Only Tag::Base available as root inside the build! macro.");
                 }
                 let eml = &ctx.path("eml");
                 let body = node.build(ctx, true)?;

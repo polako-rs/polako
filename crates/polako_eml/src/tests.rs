@@ -11,7 +11,7 @@ pub struct Div {
 impl Element for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Div::Super [[ content ]]
+            Div::Base [[ content ]]
         }
     }
 }
@@ -46,7 +46,7 @@ pub struct Label;
 impl Element for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { 
-            Label::Super
+            Label::Base
         }
     }
 }
@@ -57,7 +57,7 @@ pub struct Bold { }
 impl Element for Bold {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Bold::Super + TextElement(font: "bold")
+            Bold::Base + TextElement(font: "bold")
         }
     }
 }
@@ -108,7 +108,7 @@ fn test_bold_text() {
 pub struct UiNode { }
 impl Element for UiNode {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
-        blueprint!{ UiNode::Super + NodeBundle }
+        blueprint!{ UiNode::Base + NodeBundle }
     }
 }
 #[test]
@@ -129,7 +129,7 @@ struct MixPatch;
 impl Element for MixPatch {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            MixPatch::Super + TestComponent(value: "mix_patch")
+            MixPatch::Base + TestComponent(value: "mix_patch")
         }
     }
 }
@@ -148,7 +148,7 @@ struct MixConstruct;
 impl Element for MixConstruct {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            MixConstruct::Super + Name { value: "mix_construct" }
+            MixConstruct::Base + Name { value: "mix_construct" }
         }
     }
 }
