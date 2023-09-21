@@ -2613,7 +2613,6 @@ dependencies = [
 name = "polako_macro"
 version = "0.1.0"
 dependencies = [
- "bevy_ecs_macros",
  "constructivist",
  "proc-macro2",
  "quote",

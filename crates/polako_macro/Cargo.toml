@@ -3,12 +3,10 @@ name = "polako_macro"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 proc-macro = true
 
 [dependencies]
-bevy_ecs_macros = "0.11.2"
 constructivist = { path = "../../../constructivist/crates/constructivist" }
 proc-macro2 = "1.0.66"
 quote = "1.0.33"

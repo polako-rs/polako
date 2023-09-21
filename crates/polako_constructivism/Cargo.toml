@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.11.2"
-# constructivist = { path = "../../../constructivist/crates/constructivist"}
-polako_macro = { path = "../polako_macro" }
+polako_macro = { version = "0.1.0", path = "../polako_macro" }
