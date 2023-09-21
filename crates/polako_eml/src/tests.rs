@@ -1,12 +1,8 @@
-
 use super::*;
-
 
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
-pub struct Div {
-
-}
+pub struct Div {}
 
 impl Element for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -16,8 +12,7 @@ impl Element for Div {
     }
 }
 
-
-#[derive(Component, Segment)]
+#[derive(Component, Behaviour)]
 pub struct TextElement {
     pub text: String,
     #[default(format!("regular"))]
@@ -26,18 +21,30 @@ pub struct TextElement {
 
 impl Default for TextElement {
     fn default() -> Self {
-        TextElement { text: "".into(), font: "regular".into() }
+        TextElement {
+            text: "".into(),
+            font: "regular".into(),
+        }
     }
 }
 
 impl DivDesign {
-    pub fn push_text<'c, S: AsRef<str>>(&self, world: &mut World, content: &'c mut Vec<Entity>, text: S) -> Implemented {
-        let entity = world.spawn(TextElement { text: text.as_ref().to_string(), ..default() }).id();
+    pub fn push_text<'c, S: AsRef<str>>(
+        &self,
+        world: &mut World,
+        content: &'c mut Vec<Entity>,
+        text: S,
+    ) -> Implemented {
+        let entity = world
+            .spawn(TextElement {
+                text: text.as_ref().to_string(),
+                ..default()
+            })
+            .id();
         content.push(entity);
         Implemented
     }
 }
-
 
 #[derive(Component, Construct)]
 #[construct(Label -> TextElement -> Div)]
@@ -45,7 +52,7 @@ pub struct Label;
 
 impl Element for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
-        blueprint! { 
+        blueprint! {
             Label::Base
         }
     }
@@ -53,7 +60,7 @@ impl Element for Label {
 
 #[derive(Component, Construct)]
 #[construct(Bold -> Label)]
-pub struct Bold { }
+pub struct Bold {}
 impl Element for Bold {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
@@ -71,12 +78,13 @@ fn test_div_with_text() {
     assert_eq!(1, world.query::<&Div>().iter(world).len());
     assert_eq!(1, world.query::<&TextElement>().iter(world).len());
     assert_eq!("text", world.query::<&TextElement>().single(world).text);
-    let child = world.query_filtered::<Entity, With<TextElement>>().single(world);
+    let child = world
+        .query_filtered::<Entity, With<TextElement>>()
+        .single(world);
     let children = world.query_filtered::<&Children, With<Div>>().single(world);
     assert_eq!(1, children.len());
     assert_eq!(children[0], child);
 }
-
 
 #[test]
 fn test_labels() {
@@ -97,18 +105,26 @@ fn test_bold_text() {
     let eml = eml! { Bold { text: "some bold text" } };
     eml.apply(&mut app.world);
     let world = &mut app.world;
-    assert_eq!(1, world.query::<(&Bold, &Label, &TextElement, &Div)>().iter(world).len());
-    assert_eq!("some bold text", world.query::<&TextElement>().single(world).text);
+    assert_eq!(
+        1,
+        world
+            .query::<(&Bold, &Label, &TextElement, &Div)>()
+            .iter(world)
+            .len()
+    );
+    assert_eq!(
+        "some bold text",
+        world.query::<&TextElement>().single(world).text
+    );
     assert_eq!("bold", &world.query::<&TextElement>().single(world).font);
 }
 
-
 #[derive(Component, Construct)]
 #[construct(UiNode -> Div)]
-pub struct UiNode { }
+pub struct UiNode {}
 impl Element for UiNode {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
-        blueprint!{ UiNode::Base + NodeBundle }
+        blueprint! { UiNode::Base + NodeBundle }
     }
 }
 #[test]
@@ -121,7 +137,7 @@ fn test_blueprint_patch_self() {
 }
 #[derive(Component, Default)]
 struct TestComponent {
-    value: String
+    value: String,
 }
 #[derive(Component, Construct)]
 #[construct(MixPatch -> Div)]
@@ -139,8 +155,17 @@ fn test_blueprint_mix_patch() {
     let eml = eml! { MixPatch };
     eml.apply(&mut app.world);
     let world = &mut app.world;
-    assert_eq!(1, world.query::<(&MixPatch, &TestComponent)>().iter(world).len());
-    assert_eq!("mix_patch", &world.query::<&TestComponent>().single(world).value);
+    assert_eq!(
+        1,
+        world
+            .query::<(&MixPatch, &TestComponent)>()
+            .iter(world)
+            .len()
+    );
+    assert_eq!(
+        "mix_patch",
+        &world.query::<&TestComponent>().single(world).value
+    );
 }
 #[derive(Component, Construct)]
 #[construct(MixConstruct -> Div)]
@@ -159,7 +184,10 @@ fn test_blueprint_mix_construct() {
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&MixConstruct, &Name)>().iter(world).len());
-    assert_eq!("mix_construct", world.query::<&Name>().single(world).as_str());
+    assert_eq!(
+        "mix_construct",
+        world.query::<&Name>().single(world).as_str()
+    );
 }
 
 #[test]
@@ -172,7 +200,6 @@ fn test_eml_mix_construct() {
     assert_eq!("hello", world.query::<&Name>().single(world).as_str());
 }
 
-
 #[test]
 fn test_eml_mix_patch() {
     let mut app = App::new();
@@ -180,5 +207,8 @@ fn test_eml_mix_patch() {
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&Div, &TestComponent)>().iter(world).len());
-    assert_eq!("world", &world.query::<&TestComponent>().single(world).value);
+    assert_eq!(
+        "world",
+        &world.query::<&TestComponent>().single(world).value
+    );
 }

@@ -1,5 +1,3 @@
-
-
 use bevy::prelude::*;
 use polako::eml::*;
 use polako_constructivism::Is;
@@ -18,8 +16,8 @@ fn setup(mut commands: Commands) {
     let primary = Color::hex("9f9f9f").unwrap();
     let secondary = Color::hex("dfdfdf").unwrap();
     commands.add(eml! {
-        Body [ 
-            Column { background: primary, padding: 10. } [  
+        Body [
+            Column { background: primary, padding: 10. } [
                 Div { background: secondary, padding: 5. } [
                     "Hello world!"
                 ],
@@ -53,10 +51,9 @@ impl Element for Div {
 pub struct UiText {
     pub text: String,
     #[default(Color::hex("2f2f2f").unwrap())]
-    pub text_color: Color
+    pub text_color: Color,
 }
 
-// #[element(Div + UiText)]
 #[derive(Component, Construct)]
 #[construct(Label -> UiText -> Div)]
 pub struct Label;
@@ -73,7 +70,7 @@ impl Element for Label {
 pub struct Body;
 impl Element for Body {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
-        blueprint! { 
+        blueprint! {
             Body::Base
             + Style(
                 width: Val::Percent(100.),
@@ -111,7 +108,7 @@ impl Element for Column {
 pub struct Row;
 impl Element for Row {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
-        blueprint! { 
+        blueprint! {
             Row::Base
             + Style (
                 display: Display::Flex,
@@ -138,7 +135,12 @@ impl DivDesign {
         Implemented
     }
     // Only Div and elements based on Div can be content of the Div
-    pub fn push_content<E: Element + Is<Div>>(&self, _: &mut World, content: &mut Vec<Entity>, model: Model<E>) -> Implemented {
+    pub fn push_content<E: Element + Is<Div>>(
+        &self,
+        _: &mut World,
+        content: &mut Vec<Entity>,
+        model: Model<E>,
+    ) -> Implemented {
         content.push(model.entity);
         Implemented
     }
@@ -147,7 +149,10 @@ impl DivDesign {
 // helpers for spawning text bundle
 impl Default for UiText {
     fn default() -> Self {
-        UiText { text: "".into(), text_color: Color::hex("2f2f2f").unwrap() }
+        UiText {
+            text: "".into(),
+            text_color: Color::hex("2f2f2f").unwrap(),
+        }
     }
 }
 pub trait WithText {
@@ -172,9 +177,7 @@ impl WithText for Text {
 
 /// bypase Div.background to BackgroundColor.0 when changed
 /// and Div.padding to Style.padding
-fn div_system(
-    mut colors: Query<(&Div, &mut Style, &mut BackgroundColor,), Changed<Div>>
-) {
+fn div_system(mut colors: Query<(&Div, &mut Style, &mut BackgroundColor), Changed<Div>>) {
     colors.for_each_mut(|(div, mut style, mut bg)| {
         bg.0 = div.background;
         style.padding = UiRect::all(Val::Px(div.padding));
@@ -182,9 +185,7 @@ fn div_system(
 }
 
 /// bypass UiText text value & color to Text.sections[0] when changed
-fn ui_text_system(
-    mut texts: Query<(&UiText, &mut Text), Changed<UiText>>
-) {
+fn ui_text_system(mut texts: Query<(&UiText, &mut Text), Changed<UiText>>) {
     for (ui_text, mut text) in texts.iter_mut() {
         if text.sections.is_empty() {
             *text = Text::with_text("");

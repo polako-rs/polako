@@ -18,4 +18,4 @@
 //     size: (f32, f32)
 // }
 
-fn main() { }
+fn main() {}

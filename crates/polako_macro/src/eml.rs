@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
+use constructivist::{construct::*, context::Context};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
-use constructivist::{construct::*, context::Context};
 
-use syn::{
-    bracketed, parse::Parse, spanned::Spanned, token, Lit, LitStr,
-    Token,
-};
+use syn::{bracketed, parse::Parse, spanned::Spanned, token, Lit, LitStr, Token};
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -16,13 +13,30 @@ macro_rules! throw {
 }
 
 pub trait EmlParams {
-    fn build_patch(&self, _: &EmlContext, tag: &Ident, this: &TokenStream, patch_empty: bool) -> syn::Result<TokenStream>;
-    fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream>;
+    fn build_patch(
+        &self,
+        _: &EmlContext,
+        tag: &Ident,
+        this: &TokenStream,
+        patch_empty: bool,
+    ) -> syn::Result<TokenStream>;
+    fn build_construct(
+        &self,
+        ctx: &EmlContext,
+        tag: &Ident,
+        flattern: bool,
+    ) -> syn::Result<TokenStream>;
 }
 
 impl EmlParams for Params {
-    fn build_patch(&self, _: &EmlContext, tag: &Ident, this: &TokenStream, patch_empty: bool) -> syn::Result<TokenStream> {
-        let mut body = quote! { };
+    fn build_patch(
+        &self,
+        _: &EmlContext,
+        tag: &Ident,
+        this: &TokenStream,
+        patch_empty: bool,
+    ) -> syn::Result<TokenStream> {
+        let mut body = quote! {};
         if !patch_empty && self.items.is_empty() {
             return Ok(body);
         }
@@ -42,11 +56,16 @@ impl EmlParams for Params {
             #body
         }})
     }
-    fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
+    fn build_construct(
+        &self,
+        ctx: &EmlContext,
+        tag: &Ident,
+        flattern: bool,
+    ) -> syn::Result<TokenStream> {
         let construct = Construct {
+            flattern,
             ty: syn::parse2(quote! { #tag })?,
-            flattern: true,
-            params: self.clone()
+            params: self.clone(),
         };
         construct.build(&ctx.context)
     }
@@ -98,7 +117,7 @@ impl EmlContent {
                             let span = ch.tag.span();
                             let ct = ch.build(ctx, false)?;
                             let assign = quote_spanned! { span=>
-                                let _: Implemented = 
+                                let _: Implemented =
                                     <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance()
                                         .push_content(world, &mut __content__, __content_item__);
                             };
@@ -119,7 +138,6 @@ impl EmlContent {
                 }
             }
         })
-
     }
 }
 
@@ -161,7 +179,7 @@ impl Parse for EmlPatch {
 }
 
 impl EmlPatch {
-    pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream>{
+    pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
         self.items.build_patch(ctx, &self.ident, this, true)
     }
 }
@@ -187,9 +205,10 @@ impl Parse for EmlComponent {
 
 impl EmlComponent {
     pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
-        let construct = self.items.build_construct(ctx, &self.ident)?;
+        let construct = self.items.build_construct(ctx, &self.ident, false)?;
+        let cst = ctx.path("constructivism");
         Ok(quote! {
-            world.entity_mut(#this).insert(#construct);
+            world.entity_mut(#this).insert(#cst::Flattern::flattern(#construct));
         })
     }
 }
@@ -225,13 +244,13 @@ impl Parse for EmlMixins {
 
 impl EmlMixins {
     pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
-        let mut out = quote! { };
+        let mut out = quote! {};
         for mixin in self.0.iter() {
             out = match mixin {
                 EmlMixin::Patch(patch) => {
                     let patch = patch.build(ctx, this)?;
                     quote! { #out #patch }
-                },
+                }
                 EmlMixin::Component(component) => {
                     let construct = component.build(ctx, this)?;
                     quote! { #out #construct }
@@ -263,7 +282,7 @@ impl Parse for EmlRoot {
                 throw!(sup, "Expected Base");
             }
             let overrides = if input.peek(token::Paren) {
-                Params::parenthesized(input)?            
+                Params::parenthesized(input)?
             } else {
                 Params::empty()
             };
@@ -301,42 +320,50 @@ impl EmlRoot {
             EmlRoot::Base { tag, .. } => tag.clone(),
         }
     }
-    pub fn fetch_models(
-        &self,
-        models: &mut HashMap<Ident, (Ident, bool)>,
-    ) -> syn::Result<()> {
+    pub fn fetch_models(&self, models: &mut HashMap<Ident, (Ident, bool)>) -> syn::Result<()> {
         match self {
             EmlRoot::Element(node) => node.fetch_models(models, true),
-            EmlRoot::Base { children: EmlContent::Declared(items), .. } => {
+            EmlRoot::Base {
+                children: EmlContent::Declared(items),
+                ..
+            } => {
                 for item in items.iter() {
                     if let EmlChild::Node(node) = item {
                         node.fetch_models(models, false)?
                     }
                 }
                 Ok(())
-            },
-            _ => Ok(())
+            }
+            _ => Ok(()),
         }
     }
-    pub fn build(
-        &self,
-        ctx: &EmlContext,
-    ) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
         match self {
-            EmlRoot::Base { tag, overrides, mixins, children } => {
+            EmlRoot::Base {
+                tag,
+                overrides,
+                mixins,
+                children,
+            } => {
                 if !ctx.strict {
-                    throw!(tag, "Tag::Base only available as root inside the build! macro.");
+                    throw!(
+                        tag,
+                        "Tag::Base only available as root inside the build! macro."
+                    );
                 }
                 self.build_super(ctx, tag, overrides, mixins, children)
-            },
+            }
             EmlRoot::Element(node) => {
                 if ctx.strict {
-                    throw!(node.tag, "Only Tag::Base available as root inside the build! macro.");
+                    throw!(
+                        node.tag,
+                        "Only Tag::Base available as root inside the build! macro."
+                    );
                 }
                 let eml = &ctx.path("eml");
                 let body = node.build(ctx, true)?;
                 let tag = &node.tag;
-                Ok(quote! { 
+                Ok(quote! {
                     let __root_model__ = #eml::Model::<#tag>::new(__root__);
                     #body
                 })
@@ -344,7 +371,8 @@ impl EmlRoot {
         }
     }
 
-    fn build_super( &self,
+    fn build_super(
+        &self,
         ctx: &EmlContext,
         tag: &Ident,
         overrides: &Params,
@@ -357,7 +385,7 @@ impl EmlRoot {
         let apply_patches = overrides.build_patch(ctx, tag, &quote! { __root__ }, false)?;
         let apply_mixins = mixins.build(ctx, &quote! { __root__ })?;
 
-        Ok(quote!{
+        Ok(quote! {
             let __root_model__ = #eml::Model::<#tag>::new(__root__);
             #apply_patches;
             <<#tag as #cst::Construct>::Base as #eml::Element>::build_element(#build_content)
@@ -402,28 +430,24 @@ impl EmlNode {
         Ok(())
     }
 
-    pub fn build(
-        &self,
-        ctx: &EmlContext,
-        as_root: bool,
-    ) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &EmlContext, as_root: bool) -> syn::Result<TokenStream> {
         let tag = &self.tag;
         let eml = &ctx.path("eml");
         let content = self.children.build(ctx, tag)?;
-        let construct = self.args.build_construct(ctx, tag)?;
+        let construct = self.args.build_construct(ctx, tag, false)?;
         let model = if let Some(model) = &self.model {
             quote! {{
-                world.entity_mut(#model.entity).insert(#construct);
+                world.entity_mut(#model.entity).insert(#eml::IntoBundle::into_bundle(#construct));
                 #model
             }}
         } else if as_root {
             quote! {{
-                world.entity_mut(__root__).insert(#construct);
+                world.entity_mut(__root__).insert(#eml::IntoBundle::into_bundle(#construct));
                 __root_model__
             }}
         } else {
             quote! {{
-                let __entity__ = world.spawn(#construct).id();
+                let __entity__ = world.spawn(#eml::IntoBundle::into_bundle(#construct)).id();
                 #eml::Model::<#tag>::new(__entity__)
             }}
         };
@@ -499,8 +523,11 @@ impl Eml {
         let mut body = quote! {};
         let models = self.fetch_models()?;
         let mut root_ty = None;
-        
-        let ctx = EmlContext { context: Context::new("polako"), strict: self.strict };
+
+        let ctx = EmlContext {
+            context: Context::new("polako"),
+            strict: self.strict,
+        };
         let eml = ctx.path("eml");
         for (model, (tag, is_root)) in models.iter() {
             if *is_root {

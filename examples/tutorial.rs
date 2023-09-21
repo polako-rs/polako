@@ -96,7 +96,7 @@
 
 // #[allow(dead_code)]
 // fn step_4(mut commands: Commands) {
-//     commands.add(eml! { 
+//     commands.add(eml! {
 //         MyNode [
 //             DeadEnd [
 //                 // uncomment to get 'expected `Implemented`, found `NotImplemented<ElementAsContent>`'
@@ -141,6 +141,6 @@
 
 // fn main() {
 //     // let mut app = App::new();
-    
+
 // }
-fn main() { }
+fn main() {}
