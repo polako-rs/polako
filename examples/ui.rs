@@ -47,7 +47,7 @@ impl Element for Div {
     }
 }
 
-#[derive(Component, Segment)]
+#[derive(Component, Behaviour)]
 pub struct UiText {
     pub text: String,
     #[default(Color::hex("2f2f2f").unwrap())]
