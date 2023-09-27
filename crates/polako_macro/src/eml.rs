@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use constructivist::{construct::*, context::Context};
+use constructivist::{proc::*, context::Context};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
 

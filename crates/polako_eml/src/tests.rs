@@ -64,7 +64,7 @@ pub struct Bold {}
 impl Element for Bold {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            Bold::Base + TextElement(font: "bold")
+            Bold::Base + TextElement(.font: "bold")
         }
     }
 }
@@ -89,7 +89,7 @@ fn test_div_with_text() {
 #[test]
 fn test_labels() {
     let mut app = App::new();
-    let eml = eml! { Label { text: "text" } };
+    let eml = eml! { Label { .text: "text" } };
     eml.apply(&mut app.world);
     app.update();
     let world = &mut app.world;
@@ -102,7 +102,7 @@ fn test_labels() {
 #[test]
 fn test_bold_text() {
     let mut app = App::new();
-    let eml = eml! { Bold { text: "some bold text" } };
+    let eml = eml! { Bold { .text: "some bold text" } };
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(
@@ -145,7 +145,7 @@ struct MixPatch;
 impl Element for MixPatch {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            MixPatch::Base + TestComponent(value: "mix_patch")
+            MixPatch::Base + TestComponent(.value: "mix_patch")
         }
     }
 }
@@ -173,7 +173,7 @@ struct MixConstruct;
 impl Element for MixConstruct {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
-            MixConstruct::Base + Name { value: "mix_construct" }
+            MixConstruct::Base + Name { .value: "mix_construct" }
         }
     }
 }
@@ -193,7 +193,7 @@ fn test_blueprint_mix_construct() {
 #[test]
 fn test_eml_mix_construct() {
     let mut app = App::new();
-    let eml = eml! { Div + Name { value: "hello" } };
+    let eml = eml! { Div + Name { .value: "hello" } };
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&Div, &Name)>().iter(world).len());
@@ -203,7 +203,7 @@ fn test_eml_mix_construct() {
 #[test]
 fn test_eml_mix_patch() {
     let mut app = App::new();
-    let eml = eml! { Div + TestComponent(value: "world") };
+    let eml = eml! { Div + TestComponent(.value: "world") };
     eml.apply(&mut app.world);
     let world = &mut app.world;
     assert_eq!(1, world.query::<(&Div, &TestComponent)>().iter(world).len());

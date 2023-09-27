@@ -17,13 +17,13 @@ fn setup(mut commands: Commands) {
     let secondary = Color::hex("dfdfdf").unwrap();
     commands.add(eml! {
         Body [
-            Column { background: primary, padding: 10. } [
-                Div { background: secondary, padding: 5. } [
+            Column { .background: primary, .padding: 10. } [
+                Div { .background: secondary, .padding: 5. } [
                     "Hello world!"
                 ],
                 "This is awesome!",
                 Row [ "T", "h", "i", "s", " ", "i", "s"],
-                Row [ "A", "W", "E", "S", "O", "M", "E", "!"]
+                Row [ "A", "W", "E", "S", "O", "M", "E", "!"],
             ]
         ]
     });
@@ -33,7 +33,8 @@ fn setup(mut commands: Commands) {
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
 pub struct Div {
-    #[default(Color::NONE)]
+    #[param(default = Color::NONE)]
+    #[prop(construct)]
     background: Color,
     padding: f32,
 }
@@ -73,11 +74,11 @@ impl Element for Body {
         blueprint! {
             Body::Base
             + Style(
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
-                justify_content: JustifyContent::Center,
-                align_content: AlignContent::Center,
-                align_items: AlignItems::Center,
+                .width: Val::Percent(100.),
+                .height: Val::Percent(100.),
+                .justify_content: JustifyContent::Center,
+                .align_content: AlignContent::Center,
+                .align_items: AlignItems::Center,
             )
             [[ content ]]
         }
@@ -92,11 +93,11 @@ impl Element for Column {
         blueprint! {
             Column::Base
             + Style (
-                display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                align_content: AlignContent::Center,
-                row_gap: Val::Px(3.),
+                .display: Display::Flex,
+                .flex_direction: FlexDirection::Column,
+                .align_items: AlignItems::Center,
+                .align_content: AlignContent::Center,
+                .row_gap: Val::Px(3.),
             )
             [[ content ]]
         }
@@ -111,11 +112,11 @@ impl Element for Row {
         blueprint! {
             Row::Base
             + Style (
-                display: Display::Flex,
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                align_content: AlignContent::Center,
-                column_gap: Val::Px(3.),
+                .display: Display::Flex,
+                .flex_direction: FlexDirection::Row,
+                .align_items: AlignItems::Center,
+                .align_content: AlignContent::Center,
+                .column_gap: Val::Px(3.),
             )
             [[ content ]]
         }

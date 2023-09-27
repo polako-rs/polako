@@ -7,7 +7,8 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-constructivist = { path = "../../../constructivist/crates/constructivist" }
+# constructivist = {  path = "../../../constructivist/crates/constructivist" }
+constructivist = {  git = "https://github.com/polako-rs/constructivism"}
 proc-macro2 = "1.0.66"
 quote = "1.0.33"
 syn = "2.0.31"

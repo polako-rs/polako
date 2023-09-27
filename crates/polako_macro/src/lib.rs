@@ -8,6 +8,7 @@ implement_constructivism_macro!("polako");
 
 mod derive;
 mod eml;
+
 #[proc_macro]
 pub fn eml(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as Eml);
