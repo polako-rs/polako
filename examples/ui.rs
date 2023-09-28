@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use polako::eml::*;
-use polako_constructivism::Is;
 
 fn main() {
     App::new()
@@ -13,15 +12,13 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-    let primary = Color::hex("9f9f9f").unwrap();
-    let secondary = Color::hex("dfdfdf").unwrap();
     commands.add(eml! {
-        Body [
-            Column { .background: primary, .padding: 10. } [
-                Div { .background: secondary, .padding: 5. } [
+        Body + Name { .value: "body" } [
+            Column { .bg: "#9f9f9f", .s.padding: [25, 50] } [
+                Div { .bg: "#dfdfdf", .s.padding: 50 } [
                     "Hello world!"
                 ],
-                "This is awesome!",
+                Label { .text: "This is awesome!", .text_color: "#9f2d2d" },
                 Row [ "T", "h", "i", "s", " ", "i", "s"],
                 Row [ "A", "W", "E", "S", "O", "M", "E", "!"],
             ]
@@ -29,14 +26,42 @@ fn setup(mut commands: Commands) {
     });
 }
 
-// #[element(Elem)]
+#[derive(Construct, Default, Clone, Copy, Debug)]
+pub struct Rgba {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+}
+
+impl Rgba {
+    pub fn parse<T: AsRef<str>>(value: T) -> Self {
+        value.into()
+    }
+}
+
+impl From<Rgba> for Color {
+    fn from(value: Rgba) -> Self {
+        Color::Rgba { red: value.r, green: value.g, blue: value.b, alpha: value.a }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Rgba {
+    fn from(value: T) -> Self {
+        let value = value.as_ref();
+        let value = Color::hex(value).unwrap_or_else(|_| {
+            warn!("Can't parse '{}' as Rgba.", value);
+            Color::NONE
+        });
+        Rgba { r: value.r(), g: value.g(), b: value.b(), a: value.a() }
+    }
+}
+
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
 pub struct Div {
-    #[param(default = Color::NONE)]
     #[prop(construct)]
-    background: Color,
-    padding: f32,
+    bg: Rgba,
 }
 impl Element for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -51,8 +76,8 @@ impl Element for Div {
 #[derive(Component, Behaviour)]
 pub struct UiText {
     pub text: String,
-    #[default(Color::hex("2f2f2f").unwrap())]
-    pub text_color: Color,
+    #[param(default = Rgba::parse("2f2f2f"))]
+    pub text_color: Rgba,
 }
 
 #[derive(Component, Construct)]
@@ -123,6 +148,8 @@ impl Element for Row {
     }
 }
 
+use bevy::ecs::world::EntityMut;
+use polako_constructivism::Is;
 impl DivDesign {
     // Div can accpet string literals as content
     pub fn push_text<'c, S: AsRef<str>>(
@@ -145,6 +172,29 @@ impl DivDesign {
         content.push(model.entity);
         Implemented
     }
+    // Everything based on Div can access the styles using param extensions: `Row { .s.padding: 25 }`
+    pub fn s(&self) -> &'static Styles {
+        &Styles
+    }
+}
+
+pub struct Styles;
+impl Styles {
+    pub fn padding<T: IntoRect>(&self) -> StyleProperty<T> {
+        StyleProperty(|mut entity, padding| {
+            let rect = padding.into_rect();
+            if !entity.contains::<Style>() {
+                entity.insert(Style::default());
+            }
+            entity.get_mut::<Style>().unwrap().padding = rect;
+        })
+    }
+}
+pub struct StyleProperty<T>(fn(EntityMut, T));
+impl<T> StyleProperty<T> {
+    pub fn assign<'w>(&self, entity: EntityMut<'w>, value: T) {
+        (self.0)(entity, value)
+    }
 }
 
 // helpers for spawning text bundle
@@ -152,7 +202,7 @@ impl Default for UiText {
     fn default() -> Self {
         UiText {
             text: "".into(),
-            text_color: Color::hex("2f2f2f").unwrap(),
+            text_color: "2f2f2f".into(),
         }
     }
 }
@@ -178,20 +228,47 @@ impl WithText for Text {
 
 /// bypase Div.background to BackgroundColor.0 when changed
 /// and Div.padding to Style.padding
-fn div_system(mut colors: Query<(&Div, &mut Style, &mut BackgroundColor), Changed<Div>>) {
-    colors.for_each_mut(|(div, mut style, mut bg)| {
-        bg.0 = div.background;
-        style.padding = UiRect::all(Val::Px(div.padding));
+fn div_system(mut colors: Query<(&Div, &mut BackgroundColor), Changed<Div>>) {
+    colors.for_each_mut(|(div, mut bg)| {
+        bg.0 = div.bg.into();
     });
 }
 
 /// bypass UiText text value & color to Text.sections[0] when changed
-fn ui_text_system(mut texts: Query<(&UiText, &mut Text), Changed<UiText>>) {
-    for (ui_text, mut text) in texts.iter_mut() {
+fn ui_text_system(mut texts: Query<(Entity, &UiText, &mut Text), Changed<UiText>>) {
+    for (entity, ui_text, mut text) in texts.iter_mut() {
+        info!("ui_text_system");
         if text.sections.is_empty() {
             *text = Text::with_text("");
         }
+        info!("set text_color = {:?} for {entity:?}", ui_text.text_color);
         text.sections[0].value = ui_text.text.clone();
-        text.sections[0].style.color = ui_text.text_color;
+        text.sections[0].style.color = ui_text.text_color.into();
+    }
+}
+
+pub trait IntoRect {
+    fn into_rect(self) -> UiRect;
+}
+
+impl IntoRect for i32 {
+    fn into_rect(self) -> UiRect {
+        UiRect::all(Val::Px(self as f32))
+    }
+}
+impl IntoRect for f32 {
+    fn into_rect(self) -> UiRect {
+        UiRect::all(Val::Px(self))
+    }
+}
+
+impl IntoRect for [i32; 2] {
+    fn into_rect(self) -> UiRect {
+        UiRect {
+            left: Val::Px(self[0] as f32),
+            right: Val::Px(self[0] as f32),
+            top: Val::Px(self[1] as f32),
+            bottom: Val::Px(self[1] as f32),
+        }
     }
 }

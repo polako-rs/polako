@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use constructivist::{proc::*, context::Context};
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{quote, quote_spanned, format_ident};
 
-use syn::{bracketed, parse::Parse, spanned::Spanned, token, Lit, LitStr, Token};
+use syn::{bracketed, parse::Parse, spanned::Spanned, token::{self, Brace, Bracket}, Lit, LitStr, Token, Expr, braced};
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -12,7 +12,7 @@ macro_rules! throw {
     };
 }
 
-pub trait EmlParams {
+pub trait ParamsExt {
     fn build_patch(
         &self,
         _: &EmlContext,
@@ -28,7 +28,7 @@ pub trait EmlParams {
     ) -> syn::Result<TokenStream>;
 }
 
-impl EmlParams for Params {
+impl ParamsExt for Params {
     fn build_patch(
         &self,
         _: &EmlContext,
@@ -68,6 +68,186 @@ impl EmlParams for Params {
             params: self.clone(),
         };
         construct.build(&ctx.context)
+    }
+}
+
+pub enum EmlPathPart {
+    /// `hidden` in `.class[hidden]`
+    Index(Ident),
+    /// `color` in `.bind.color`
+    Prop(Ident),
+}
+impl Parse for EmlPathPart {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Bracket) {
+            let content;
+            bracketed!(content in input);
+            Ok(EmlPathPart::Index(content.parse()?))
+        } else {
+            Ok(EmlPathPart::Prop(input.parse()?))
+        }
+    }
+}
+pub struct EmlPath(Vec<EmlPathPart>);
+impl Parse for EmlPath {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut parts = vec![];
+        let mut dot = if input.peek(Token![.]) {
+            Some(input.parse::<Token![.]>()?)
+        } else {
+            None
+        };
+        while let Ok(part) = input.parse() {
+            parts.push(part);
+            dot = if input.peek(Token![.]) {
+                Some(input.parse::<Token![.]>()?)
+            } else {
+                None
+            };
+        }
+        if dot.is_some() {
+            parts.push(EmlPathPart::Prop(format_ident!("DOT_AUTOCOMPLETE_TOKEN", span = dot.span())));
+        }
+        if parts.is_empty() {
+            throw!(input, "EmlPath should contain at least one part");
+        }
+        Ok(EmlPath(parts))
+    }
+}
+
+pub enum EmlExpr {
+    Prop(Vec<Ident>),
+    Expr(Expr),
+}
+
+impl Parse for EmlExpr {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Brace) {
+            let outer;
+            braced!(outer in input);
+            if outer.peek(Brace) {
+                let inner;
+                braced!(inner in outer);
+                Ok(EmlExpr::Prop(inner.parse_terminated(Ident::parse, Token![.])?.into_iter().collect()))
+            } else {
+                Ok(EmlExpr::Expr(outer.parse()?))
+            }
+        } else {
+            Ok(EmlExpr::Expr(input.parse()?))
+        }
+    }
+}
+
+impl EmlExpr {
+    pub fn build(&self, _: &EmlContext) -> syn::Result<TokenStream> {
+        Ok(match self {
+            EmlExpr::Expr(e) => quote! { #e },
+            EmlExpr::Prop(_) => quote! { },
+        })
+    }
+}
+
+pub struct EmlParam {
+    pub extension: Ident,
+    pub path: EmlPath,
+    pub value: Option<EmlExpr>,
+}
+
+impl Parse for EmlParam {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![.]>()?;
+        let extension = input.parse()?;
+        let path = input.parse()?;
+        let value = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+        Ok(EmlParam { extension, path, value })
+    }
+}
+
+impl EmlParam {
+    pub fn build_extension(&self, ctx: &EmlContext, tag: &Ident, entity: &TokenStream) -> syn::Result<TokenStream> {
+        let cst = ctx.constructivism();
+        let ext_ident = &self.extension;
+        let mut ext = quote! { 
+            <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance().#ext_ident()
+        };
+        for part in self.path.0.iter() {
+            ext = match part {
+                EmlPathPart::Prop(ident) => {
+                    quote! { #ext.#ident() }
+                },
+                EmlPathPart::Index(ident) => {
+                    let ident = ident.to_string();
+                    quote! { #ext.at(#ident) }
+                }
+            }
+        }
+        // Ok(quote! { #ext; })
+        if let Some(value) = &self.value {
+            let value = value.build(ctx)?;
+            let assign = quote_spanned!{ value.span()=>
+                __ext__.assign(#entity, #value)
+            };
+            Ok(quote! {{
+                let __ext__ = #ext;
+                #assign;
+            }})
+        } else {
+            Ok(quote! { #ext.declare(#entity); })
+        }
+    }
+}
+
+// pub struct EmplParams(Vec<EmlParam>)
+
+pub struct EmlParams {
+    common: Params,
+    extended: Vec<EmlParam>,
+}
+
+impl Parse for EmlParams {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut common = vec![];
+        let mut extended = vec![];
+        while !input.is_empty() {
+            if input.fork().parse::<EmlParam>().is_ok() {
+                extended.push(input.parse()?);
+            } else {
+                common.push(input.parse()?);
+            }
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        Ok(EmlParams { extended, common: Params { items: common } })
+    }
+}
+
+impl EmlParams {
+    pub fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
+        self.common.build_construct(ctx, tag, false)
+    }
+
+    pub fn build_extensions(&self, ctx: &EmlContext, tag: &Ident, entity: &TokenStream) -> syn::Result<TokenStream> {
+        let mut out = quote! { };
+        for param in self.extended.iter() {
+            let ext = param.build_extension(ctx, tag, entity)?;
+            out = quote! { #out #ext };
+        }
+        Ok(out)
+    }
+
+    pub fn braced(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+        content.parse()
+    }
+    pub fn empty() -> Self {
+        EmlParams { common: Params::empty(), extended: vec![] }
     }
 }
 
@@ -399,7 +579,7 @@ impl EmlRoot {
 pub struct EmlNode {
     pub tag: Ident,
     pub model: Option<Ident>,
-    pub args: Params,
+    pub args: EmlParams,
     pub mixins: EmlMixins,
     pub children: EmlContent,
 }
@@ -434,7 +614,7 @@ impl EmlNode {
         let tag = &self.tag;
         let eml = &ctx.path("eml");
         let content = self.children.build(ctx, tag)?;
-        let construct = self.args.build_construct(ctx, tag, false)?;
+        let construct = self.args.build_construct(ctx, tag)?;
         let model = if let Some(model) = &self.model {
             quote! {{
                 world.entity_mut(#model.entity).insert(#eml::IntoBundle::into_bundle(#construct));
@@ -452,12 +632,17 @@ impl EmlNode {
             }}
         };
         let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
+        let apply_extensions = self.args.build_extensions(ctx, tag, &quote!{ __entity__ })?;
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;
             <#tag as #eml::Element>::build_element(__content__)
                 .eml()
                 .write(world, __model__.entity);
+            {
+                let __entity__ = world.entity_mut(__model__.entity);
+                #apply_extensions
+            }
             #apply_mixins
             __model__
         }})
@@ -473,9 +658,9 @@ impl Parse for EmlNode {
             model = Some(input.parse()?);
         }
         let args = if input.peek(token::Brace) {
-            Params::braced(input)?
+            EmlParams::braced(input)?
         } else {
-            Params::empty()
+            EmlParams::empty()
         };
         let mixins = input.parse()?;
         let children = input.parse()?;

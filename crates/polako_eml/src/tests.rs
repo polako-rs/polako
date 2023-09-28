@@ -15,7 +15,7 @@ impl Element for Div {
 #[derive(Component, Behaviour)]
 pub struct TextElement {
     pub text: String,
-    #[default(format!("regular"))]
+    #[param(default = format!("regular"))]
     pub font: String,
 }
 

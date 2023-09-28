@@ -29,7 +29,7 @@ pub fn blueprint(input: TokenStream) -> TokenStream {
     TokenStream::from(stream)
 }
 
-#[proc_macro_derive(Constraint, attributes(required, default))]
+#[proc_macro_derive(Constraint, attributes(param, prop))]
 pub fn constraint_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(match DeriveConstraint::build_from_derive(input) {
@@ -38,7 +38,7 @@ pub fn constraint_derive(input: TokenStream) -> TokenStream {
     })
 }
 
-#[proc_macro_derive(Behaviour, attributes(required, default))]
+#[proc_macro_derive(Behaviour, attributes(param, prop))]
 pub fn behaviour_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(match DeriveBehaviour::build_from_derive(input) {
