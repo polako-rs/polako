@@ -1,5 +1,6 @@
 #![doc(html_logo_url = "https://github.com/jkb0o/polako/raw/master/docs/polakoko.png")]
 
+pub use bevy;
 pub mod constructivism {
     pub use polako_constructivism::*;
     pub use polako_macro::*;

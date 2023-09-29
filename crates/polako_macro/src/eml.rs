@@ -4,7 +4,9 @@ use constructivist::{proc::*, context::Context};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned, format_ident};
 
-use syn::{bracketed, parse::Parse, spanned::Spanned, token::{self, Brace, Bracket}, Lit, LitStr, Token, Expr, braced};
+use syn::{bracketed, parse::Parse, spanned::Spanned, token::{self, Bracket}, Lit, LitStr, Token, braced};
+
+use crate::variant::Variant;
 
 macro_rules! throw {
     ($loc:expr, $msg:expr) => {
@@ -28,10 +30,10 @@ pub trait ParamsExt {
     ) -> syn::Result<TokenStream>;
 }
 
-impl ParamsExt for Params {
+impl ParamsExt for Params<Variant> {
     fn build_patch(
         &self,
-        _: &EmlContext,
+        ctx: &EmlContext,
         tag: &Ident,
         this: &TokenStream,
         patch_empty: bool,
@@ -42,7 +44,8 @@ impl ParamsExt for Params {
         }
         for arg in self.items.iter() {
             let ident = &arg.ident;
-            let value = &arg.value;
+            let value = Variant::build(&arg.value, ctx)?;
+            // let value = Variant::build(, ctx)?;
             body = quote! { #body
                 __component__.#ident = #value.into();
             }
@@ -115,42 +118,10 @@ impl Parse for EmlPath {
     }
 }
 
-pub enum EmlExpr {
-    Prop(Vec<Ident>),
-    Expr(Expr),
-}
-
-impl Parse for EmlExpr {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.peek(Brace) {
-            let outer;
-            braced!(outer in input);
-            if outer.peek(Brace) {
-                let inner;
-                braced!(inner in outer);
-                Ok(EmlExpr::Prop(inner.parse_terminated(Ident::parse, Token![.])?.into_iter().collect()))
-            } else {
-                Ok(EmlExpr::Expr(outer.parse()?))
-            }
-        } else {
-            Ok(EmlExpr::Expr(input.parse()?))
-        }
-    }
-}
-
-impl EmlExpr {
-    pub fn build(&self, _: &EmlContext) -> syn::Result<TokenStream> {
-        Ok(match self {
-            EmlExpr::Expr(e) => quote! { #e },
-            EmlExpr::Prop(_) => quote! { },
-        })
-    }
-}
-
 pub struct EmlParam {
     pub extension: Ident,
     pub path: EmlPath,
-    pub value: Option<EmlExpr>,
+    pub value: Option<Variant>,
 }
 
 impl Parse for EmlParam {
@@ -188,7 +159,7 @@ impl EmlParam {
         }
         // Ok(quote! { #ext; })
         if let Some(value) = &self.value {
-            let value = value.build(ctx)?;
+            let value = Variant::build(value, ctx)?;
             let assign = quote_spanned!{ value.span()=>
                 __ext__.assign(#entity, #value)
             };
@@ -205,7 +176,7 @@ impl EmlParam {
 // pub struct EmplParams(Vec<EmlParam>)
 
 pub struct EmlParams {
-    common: Params,
+    common: Params<Variant>,
     extended: Vec<EmlParam>,
 }
 
@@ -219,6 +190,11 @@ impl Parse for EmlParams {
             } else {
                 common.push(input.parse()?);
             }
+            // if input.fork().parse::<Param<Variant>>().is_ok() {
+            //     common.push(input.parse()?);
+            // } else {
+            //     extended.push(input.parse()?);
+            // }
             if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
             }
@@ -347,7 +323,7 @@ impl Parse for EmlContent {
 // Div + Style(width: Val::Percent(100.))
 pub struct EmlPatch {
     pub ident: Ident,
-    pub items: Params,
+    pub items: Params<Variant>,
 }
 
 impl Parse for EmlPatch {
@@ -368,7 +344,7 @@ impl EmlPatch {
 // Div + Style
 pub struct EmlComponent {
     pub ident: Ident,
-    pub items: Params,
+    pub items: Params<Variant>,
 }
 
 impl Parse for EmlComponent {
@@ -445,7 +421,7 @@ pub enum EmlRoot {
     Element(EmlNode),
     Base {
         tag: Ident,
-        overrides: Params,
+        overrides: Params<Variant>,
         mixins: EmlMixins,
         children: EmlContent,
     },
@@ -555,7 +531,7 @@ impl EmlRoot {
         &self,
         ctx: &EmlContext,
         tag: &Ident,
-        overrides: &Params,
+        overrides: &Params<Variant>,
         mixins: &EmlMixins,
         content: &EmlContent,
     ) -> syn::Result<TokenStream> {

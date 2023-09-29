@@ -4,10 +4,11 @@ use eml::Eml;
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
-implement_constructivism_macro!("polako");
+implement_constructivism_macro!("polako", variant::Variant);
 
 mod derive;
 mod eml;
+mod variant;
 
 #[proc_macro]
 pub fn eml(input: TokenStream) -> TokenStream {

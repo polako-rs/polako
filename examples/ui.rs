@@ -14,11 +14,11 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(eml! {
         Body + Name { .value: "body" } [
-            Column { .bg: "#9f9f9f", .s.padding: [25, 50] } [
-                Div { .bg: "#dfdfdf", .s.padding: 50 } [
+            Column { .bg: #9d9d9d, .s.padding: [25, 50] } [
+                Div { .bg: #dedede, .s.padding: 50 } [
                     "Hello world!"
                 ],
-                Label { .text: "This is awesome!", .text_color: "#9f2d2d" },
+                Label { .text: "This is awesome!", .text_color: #9f2d2d },
                 Row [ "T", "h", "i", "s", " ", "i", "s"],
                 Row [ "A", "W", "E", "S", "O", "M", "E", "!"],
             ]
@@ -26,42 +26,12 @@ fn setup(mut commands: Commands) {
     });
 }
 
-#[derive(Construct, Default, Clone, Copy, Debug)]
-pub struct Rgba {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-}
-
-impl Rgba {
-    pub fn parse<T: AsRef<str>>(value: T) -> Self {
-        value.into()
-    }
-}
-
-impl From<Rgba> for Color {
-    fn from(value: Rgba) -> Self {
-        Color::Rgba { red: value.r, green: value.g, blue: value.b, alpha: value.a }
-    }
-}
-
-impl<T: AsRef<str>> From<T> for Rgba {
-    fn from(value: T) -> Self {
-        let value = value.as_ref();
-        let value = Color::hex(value).unwrap_or_else(|_| {
-            warn!("Can't parse '{}' as Rgba.", value);
-            Color::NONE
-        });
-        Rgba { r: value.r(), g: value.g(), b: value.b(), a: value.a() }
-    }
-}
 
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
 pub struct Div {
     #[prop(construct)]
-    bg: Rgba,
+    bg: Color,
 }
 impl Element for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
@@ -76,8 +46,8 @@ impl Element for Div {
 #[derive(Component, Behaviour)]
 pub struct UiText {
     pub text: String,
-    #[param(default = Rgba::parse("2f2f2f"))]
-    pub text_color: Rgba,
+    #[param(default = Color::hex("2f2f2f").unwrap())]
+    pub text_color: Color,
 }
 
 #[derive(Component, Construct)]
@@ -202,7 +172,7 @@ impl Default for UiText {
     fn default() -> Self {
         UiText {
             text: "".into(),
-            text_color: "2f2f2f".into(),
+            text_color: Color::hex("2f2f2f").unwrap(),
         }
     }
 }

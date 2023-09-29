@@ -7,6 +7,7 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
+# for local development:
 # constructivist = {  path = "../../../constructivist/crates/constructivist" }
 constructivist = {  git = "https://github.com/polako-rs/constructivism"}
 proc-macro2 = "1.0.66"
