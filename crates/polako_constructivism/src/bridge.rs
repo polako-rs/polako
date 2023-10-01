@@ -14,6 +14,36 @@ derive_construct! {
     };
 }
 
+trait TextProps {
+    fn text(&self) -> String;
+    fn set_text(&mut self, text: impl Into<String>);
+}
+impl TextProps for Text {
+    fn text(&self) -> String {
+        if let Some(section) = self.sections.first() {
+            section.value.clone()
+        } else {
+            format!("")
+        }
+    }
+    fn set_text(&mut self, text: impl Into<String>) {
+        if self.sections.is_empty() {
+            self.sections.push(TextSection::new(text, TextStyle::default()))
+        } else {
+            self.sections[0].value = text.into()
+        }
+    }
+}
+derive_segment! {
+    seg => Text;
+    construct => (text: String = format!("")) -> {
+        Text::from_section(text, TextStyle::default())
+    };
+    props => {
+        text: String = [text, set_text];
+    };
+}
+
 trait NameProps {
     fn get_value(&self) -> String;
     fn set_value(&mut self, value: String);
@@ -53,3 +83,17 @@ derive_construct! {
         a: f32 = [a, set_a];
     };
 }
+
+
+
+// trait TimeProps {
+
+// }
+
+// derive_construct! {
+//     seq => Time -> Nothing;
+//     construct => () -> {
+//         Time::default()
+//     };
+//     // props =>
+// }
