@@ -1,6 +1,10 @@
-use std::{any::TypeId, cell::RefCell, rc::Rc, ops::DerefMut};
+use std::{any::TypeId, cell::RefCell, ops::DerefMut, rc::Rc};
 
-use bevy::{prelude::*, utils::{HashMap, HashSet}, ecs::system::{SystemBuffer, Command}};
+use bevy::{
+    ecs::system::{Command, SystemBuffer},
+    prelude::*,
+    utils::{HashMap, HashSet},
+};
 use polako_constructivism::*;
 
 pub struct FlowPlugin;
@@ -12,7 +16,6 @@ impl Plugin for FlowPlugin {
         app.insert_resource(BindTargets::new());
     }
 }
-
 
 pub fn flow_system(world: &mut World) {
     let flow = world.resource::<FlowResource>().clone();
@@ -31,11 +34,10 @@ pub fn flow_system(world: &mut World) {
             break;
         }
     }
-
 }
 
 pub fn cleanup_component_readers<H: Component, T: Bindable>(
-    mut sources: Query<&mut BindSources<H, T>>,
+    mut sources: Query<&mut ComponentBindSources<H, T>>,
     mut targets: ResMut<BindTargets>,
     mut removals: RemovedComponents<BindTarget>,
 ) {
@@ -49,19 +51,42 @@ pub fn cleanup_component_readers<H: Component, T: Bindable>(
 }
 
 pub fn read_component_changes<H: Component, T: Bindable>(
-    components: Query<(&BindSources<H, T>, &H), Changed<H>>,
+    components: Query<(&ComponentBindSources<H, T>, &H), Changed<H>>,
     mut commands: Commands,
 ) {
     for (sources, component) in components.iter() {
         for items in sources.0.values() {
             for source in items.iter() {
                 let value = source.read.read(&component).get();
-                (source.notify_changed)(&mut commands, value)
+                (source.maybe_changed)(&mut commands, value)
             }
         }
     }
 }
 
+pub fn cleanup_resource_readers<H: Resource, T: Bindable>(
+    mut sources: ResMut<ResourceBindSources<H, T>>,
+    mut removals: RemovedComponents<BindTarget>,
+) {
+    for target in removals.iter() {
+        sources.0.remove(&target);
+    }
+}
+
+pub fn read_resource_changes<H: Resource, T: Bindable>(
+    res: Res<H>,
+    sources: Res<ResourceBindSources<H, T>>,
+    mut commands: Commands,
+) {
+    if res.is_changed() {
+        for sources in sources.0.values() {
+            for source in sources.iter() {
+                let value = source.read.read(&res).get();
+                (source.maybe_changed)(&mut commands, value)
+            }
+        }
+    }
+}
 pub fn write_component_changes<H: Component, V: Bindable>(
     mut components: Query<&mut H>,
     mut changes: EventReader<ApplyChange<H, V>>,
@@ -74,7 +99,9 @@ pub fn write_component_changes<H: Component, V: Bindable>(
         if change.writer.read(component.as_ref()).as_ref() == &change.value {
             continue;
         }
-        change.writer.write(component.as_mut(), change.value.clone());
+        change
+            .writer
+            .write(component.as_mut(), change.value.clone());
         flow.repeat();
     }
 }
@@ -108,11 +135,10 @@ impl SystemBuffer for FlowControl {
     }
 }
 
-
 #[derive(Resource, Deref, Clone)]
 pub struct FlowResource(Rc<Flow>);
-unsafe impl Send for FlowResource { }
-unsafe impl Sync for FlowResource { }
+unsafe impl Send for FlowResource {}
+unsafe impl Sync for FlowResource {}
 impl FlowResource {
     pub fn new() -> Self {
         FlowResource(Rc::new(Flow::new()))
@@ -123,11 +149,11 @@ pub struct Flow {
     schdule: RefCell<Schedule>,
     queue: RefCell<Vec<Box<dyn FnOnce(&mut Schedule)>>>,
     commands: RefCell<Vec<Box<dyn FnOnce(&mut World)>>>,
-    
-    registered_read_systems: RefCell<HashSet<(TypeId, TypeId)>>,
+
+    registered_read_component_systems: RefCell<HashSet<(TypeId, TypeId)>>,
+    registered_read_resource_systems: RefCell<HashSet<(TypeId, TypeId)>>,
     registered_wite_systems: RefCell<HashSet<(TypeId, TypeId)>>,
 }
-
 
 impl Flow {
     pub fn new() -> Self {
@@ -136,39 +162,66 @@ impl Flow {
             queue: RefCell::new(vec![]),
             commands: RefCell::new(vec![]),
 
-            registered_read_systems: RefCell::new(HashSet::new()),
+            registered_read_component_systems: RefCell::new(HashSet::new()),
+            registered_read_resource_systems: RefCell::new(HashSet::new()),
             registered_wite_systems: RefCell::new(HashSet::new()),
         }
     }
 
-
-
-    pub fn register_component_read_systems<H: Component, V: Bindable>(
-        &self
-    ) {
+    pub fn register_component_read_systems<H: Component, V: Bindable>(&self) {
         let host_type = TypeId::of::<H>();
         let value_type = TypeId::of::<V>();
-        if self.registered_read_systems.borrow().contains(&(host_type, value_type)) {
+        if self
+            .registered_read_component_systems
+            .borrow()
+            .contains(&(host_type, value_type))
+        {
             return;
         }
-        self.registered_read_systems.borrow_mut().insert((host_type, value_type));
+        self.registered_read_component_systems
+            .borrow_mut()
+            .insert((host_type, value_type));
         self.queue.borrow_mut().push(Box::new(|schedule| {
             schedule.add_systems(cleanup_component_readers::<H, V>);
-            schedule.add_systems(read_component_changes::<H, V>
-                .after(cleanup_component_readers::<H, V>)
+            schedule.add_systems(
+                read_component_changes::<H, V>.after(cleanup_component_readers::<H, V>),
             );
         }));
     }
 
-    pub fn register_component_write_systems<H: Component, V: Bindable>(
-        &self
-    ) {
+    pub fn register_resource_read_systems<H: Resource, V: Bindable>(&self) {
         let host_type = TypeId::of::<H>();
         let value_type = TypeId::of::<V>();
-        if self.registered_wite_systems.borrow().contains(&(host_type, value_type)) {
+        if self
+            .registered_read_resource_systems
+            .borrow()
+            .contains(&(host_type, value_type))
+        {
             return;
         }
-        self.registered_wite_systems.borrow_mut().insert((host_type, value_type));
+        self.registered_read_resource_systems
+            .borrow_mut()
+            .insert((host_type, value_type));
+        self.queue.borrow_mut().push(Box::new(|schedule| {
+            schedule.add_systems(cleanup_resource_readers::<H, V>);
+            schedule
+                .add_systems(read_resource_changes::<H, V>.after(cleanup_resource_readers::<H, V>));
+        }));
+    }
+
+    pub fn register_component_write_systems<H: Component, V: Bindable>(&self) {
+        let host_type = TypeId::of::<H>();
+        let value_type = TypeId::of::<V>();
+        if self
+            .registered_wite_systems
+            .borrow()
+            .contains(&(host_type, value_type))
+        {
+            return;
+        }
+        self.registered_wite_systems
+            .borrow_mut()
+            .insert((host_type, value_type));
         self.queue.borrow_mut().push(Box::new(|schedule| {
             schedule.add_systems(write_component_changes::<H, V>);
         }));
@@ -176,87 +229,123 @@ impl Flow {
             world.insert_resource(Events::<ApplyChange<H, V>>::default());
         }));
     }
-
 }
 
 pub trait WorldFlow {
-    fn bind_component_to_component<
-        S: Component,
-        T: Component,
-        V: Send + Sync + Clone + PartialEq + 'static,
-    >(
+    fn bind_component_to_component<S: Component, T: Component, V: Bindable>(
         &mut self,
         from: ComponentReader<S, V>,
         to: ComponentWriter<T, V>,
     );
+
+    fn bind_resource_to_component<R: Resource, T: Component, V: Bindable>(
+        &mut self,
+        from: Reader<R, V>,
+        to: ComponentWriter<T, V>,
+    );
 }
 impl WorldFlow for World {
-    fn bind_component_to_component<
-        S: Component,
-        T: Component,
-        V: Send + Sync + Clone + PartialEq + 'static,
-    >(
+    fn bind_component_to_component<S: Component, T: Component, V: Bindable>(
         &mut self,
         from: ComponentReader<S, V>,
         to: ComponentWriter<T, V>,
     ) {
-        // let to: Writer<T, V> = to.writer;
-        // let from: Reader<S, V> = from.reader;
         // setup source
 
         // this component will be added to `from.entity`, all required generic systems will be
         // added to the `Flow` if needed
         let bind_source = BindSource {
             read: from.reader,
-            notify_changed: Box::new(move |cmd, value| {
+            maybe_changed: Box::new(move |cmd, value| {
                 let target = to.entity;
                 let prop = to.writer.clone();
                 cmd.add(move |w: &mut World| {
-                    w.get_resource_or_insert_with(Events::<ApplyChange<T, V>>::default).send(
-                        ApplyChange { writer: prop, target, value }
-                    )
+                    w.get_resource_or_insert_with(Events::<ApplyChange<T, V>>::default)
+                        .send(ApplyChange {
+                            writer: prop,
+                            target,
+                            value,
+                        })
                 })
-            })
+            }),
         };
         {
             let mut e = self.entity_mut(from.entity);
-            if !e.contains::<BindSources<S, V>>() {
-                e.insert(BindSources::<S, V>(HashMap::new()));
+            if !e.contains::<ComponentBindSources<S, V>>() {
+                e.insert(ComponentBindSources::<S, V>(HashMap::new()));
             }
-            e.get_mut::<BindSources<S, V>>()
-                .unwrap().0
+            e.get_mut::<ComponentBindSources<S, V>>()
+                .unwrap()
+                .0
                 .entry(to.entity)
                 .or_default()
                 .push(bind_source);
         }
-        
-        
-        
+
         // setup target
         self.entity_mut(to.entity).insert(BindTarget);
-        self.resource_mut::<BindTargets>().0
+        self.resource_mut::<BindTargets>()
+            .0
             .entry(to.entity)
             .or_default()
             .insert(from.entity);
-    
+
         let flow = self.resource::<FlowResource>().clone();
         flow.register_component_read_systems::<S, V>();
-        flow.register_component_write_systems::<T, V>();    
+        flow.register_component_write_systems::<T, V>();
+    }
+
+    fn bind_resource_to_component<S: Resource, T: Component, V: Bindable>(
+        &mut self,
+        from: Reader<S, V>,
+        to: ComponentWriter<T, V>,
+    ) {
+        let bind_source = BindSource {
+            read: from,
+            maybe_changed: Box::new(move |cmd, value| {
+                let target = to.entity;
+                let prop = to.writer.clone();
+                cmd.add(move |w: &mut World| {
+                    w.get_resource_or_insert_with(Events::<ApplyChange<T, V>>::default)
+                        .send(ApplyChange {
+                            writer: prop,
+                            target,
+                            value,
+                        })
+                })
+            }),
+        };
+
+        self.entity_mut(to.entity).insert(BindTarget);
+        self.get_resource_or_insert_with(ResourceBindSources::<S, V>::new)
+            .0
+            .entry(to.entity)
+            .or_default()
+            .push(bind_source);
+
+        let flow = self.resource::<FlowResource>().clone();
+        flow.register_resource_read_systems::<S, V>();
+        flow.register_component_write_systems::<T, V>();
     }
 }
 
-pub trait Bindable: Send + Sync + Clone + PartialEq + 'static { }
-impl<T: Send + Sync + Clone + PartialEq + 'static> Bindable for T { }
+pub trait Bindable: Send + Sync + Clone + PartialEq + 'static {}
+impl<T: Send + Sync + Clone + PartialEq + 'static> Bindable for T {}
 
-pub struct BindSource<H: Component, T: Bindable> {
+pub struct BindSource<H, T: Bindable> {
     read: Reader<H, T>,
-    notify_changed: Box<dyn Fn(&mut Commands, T) + Send + Sync>
+    maybe_changed: Box<dyn Fn(&mut Commands, T) + Send + Sync>,
 }
 #[derive(Component)]
-pub struct BindSources<H: Component, T: Bindable>(
-    HashMap<Entity, Vec<BindSource<H, T>>>
-);
+pub struct ComponentBindSources<H: Component, V: Bindable>(HashMap<Entity, Vec<BindSource<H, V>>>);
 
+#[derive(Resource)]
+pub struct ResourceBindSources<H: Resource, V: Bindable>(HashMap<Entity, Vec<BindSource<H, V>>>);
+impl<H: Resource, V: Bindable> ResourceBindSources<H, V> {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+}
 
 #[derive(Component)]
 pub struct BindTarget;
@@ -283,10 +372,16 @@ pub trait EntityProp<H: Component, V: Bindable> {
 
 impl<H: Component, V: Bindable> EntityProp<H, V> for Entity {
     fn get(&self, value: impl Into<Reader<H, V>>) -> ComponentReader<H, V> {
-        ComponentReader { entity: self.clone(), reader: value.into() }
+        ComponentReader {
+            entity: self.clone(),
+            reader: value.into(),
+        }
     }
     fn set(&self, value: impl Into<Writer<H, V>>) -> ComponentWriter<H, V> {
-        ComponentWriter { entity: self.clone(), writer: value.into() }
+        ComponentWriter {
+            entity: self.clone(),
+            writer: value.into(),
+        }
     }
 }
 
@@ -301,6 +396,17 @@ impl<S: Component, T: Component, V: Bindable> Command for BindComponentToCompone
     }
 }
 
+pub struct BindResourceToComponent<S: Resource, T: Component, V: Bindable> {
+    pub from: Reader<S, V>,
+    pub to: ComponentWriter<T, V>,
+}
+
+impl<S: Resource, T: Component, V: Bindable> Command for BindResourceToComponent<S, T, V> {
+    fn apply(self, world: &mut World) {
+        world.bind_resource_to_component(self.from, self.to);
+    }
+}
+
 pub struct ComponentReader<C: Component, V: Bindable> {
     entity: Entity,
     reader: Reader<C, V>,
@@ -308,11 +414,11 @@ pub struct ComponentReader<C: Component, V: Bindable> {
 
 pub enum Reader<H, V: Bindable> {
     Func(fn(&H) -> Value<V>),
-    Closure(Rc<dyn Fn(&H) -> Value<V>>)
+    Closure(Rc<dyn Fn(&H) -> Value<V>>),
 }
 
-unsafe impl<H, V: Bindable> Send for Reader<H, V> { }
-unsafe impl<H, V: Bindable> Sync for Reader<H, V> { }
+unsafe impl<H, V: Bindable> Send for Reader<H, V> {}
+unsafe impl<H, V: Bindable> Sync for Reader<H, V> {}
 impl<H, V: Bindable> Clone for Reader<H, V> {
     fn clone(&self) -> Self {
         match self {
@@ -336,7 +442,6 @@ impl<H, V: Bindable> Reader<H, V> {
     }
 }
 
-
 pub struct ComponentWriter<C: Component, V: Bindable> {
     entity: Entity,
     writer: Writer<C, V>,
@@ -354,8 +459,8 @@ impl<H, V: Bindable> Writer<H, V> {
         (self.set)(host, value)
     }
 }
-unsafe impl<H, V: Bindable> Send for Writer<H, V> { }
-unsafe impl<H, V: Bindable> Sync for Writer<H, V> { }
+unsafe impl<H, V: Bindable> Send for Writer<H, V> {}
+unsafe impl<H, V: Bindable> Sync for Writer<H, V> {}
 impl<H, V: Bindable> Clone for Writer<H, V> {
     fn clone(&self) -> Self {
         Self {
@@ -364,7 +469,7 @@ impl<H, V: Bindable> Clone for Writer<H, V> {
         }
     }
 }
-impl<H, T: Bindable> From<Prop<H, T>> for Writer<H, T> { 
+impl<H, T: Bindable> From<Prop<H, T>> for Writer<H, T> {
     fn from(prop: Prop<H, T>) -> Self {
         Writer {
             get: prop.getter(),
@@ -373,5 +478,15 @@ impl<H, T: Bindable> From<Prop<H, T>> for Writer<H, T> {
     }
 }
 
+pub trait MapProp<H, V: Bindable> {
+    fn map<F: Fn(&V) -> T + 'static, T: Bindable>(self, map: F) -> Reader<H, T>;
+}
 
-
+impl<H: 'static, V: Bindable> MapProp<H, V> for Prop<H, V> {
+    fn map<F: Fn(&V) -> T + 'static, T: Bindable>(self, map: F) -> Reader<H, T> {
+        Reader::Closure(Rc::new(move |host| {
+            let val = self.get(host);
+            Value::Val(map(val.as_ref()))
+        }))
+    }
+}

@@ -4,10 +4,10 @@ use bevy::prelude::*;
 derive_construct! {
     seq => NodeBundle -> Nothing;
     construct => () -> {
-        NodeBundle::default() 
+        NodeBundle::default()
     };
 }
-derive_construct! { 
+derive_construct! {
     seq => TextBundle -> Nothing;
     construct => () -> {
         TextBundle::default()
@@ -28,7 +28,8 @@ impl TextProps for Text {
     }
     fn set_text(&mut self, text: impl Into<String>) {
         if self.sections.is_empty() {
-            self.sections.push(TextSection::new(text, TextStyle::default()))
+            self.sections
+                .push(TextSection::new(text, TextStyle::default()))
         } else {
             self.sections[0].value = text.into()
         }
@@ -66,7 +67,6 @@ derive_construct! {
     };
 }
 
-
 derive_construct! {
     seq => Color -> Nothing;
     construct => (hex: String = format!("")) -> {
@@ -84,16 +84,21 @@ derive_construct! {
     };
 }
 
+trait ReadOnly {
+    fn readonly<T>(&mut self, _: T) {
+        warn!("Attempt to set readonly prop");
+    }
+}
 
+impl ReadOnly for Time {}
 
-// trait TimeProps {
-
-// }
-
-// derive_construct! {
-//     seq => Time -> Nothing;
-//     construct => () -> {
-//         Time::default()
-//     };
-//     // props =>
-// }
+derive_construct! {
+    seq => Time -> Nothing;
+    construct => () -> {
+        Time::default()
+    };
+    props => {
+        elapsed_seconds: f32 = [elapsed_seconds, readonly];
+        delta_seconds: f32 = [delta_seconds, readonly];
+    };
+}

@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 
-use constructivist::{proc::*, context::Context};
+use constructivist::{context::Context, proc::*};
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, quote_spanned, format_ident};
+use quote::{format_ident, quote, quote_spanned};
 
-use syn::{bracketed, parse::Parse, spanned::Spanned, token::{self, Bracket}, Lit, LitStr, Token, braced};
+use syn::{
+    braced, bracketed,
+    parse::Parse,
+    spanned::Spanned,
+    token::{self, Bracket},
+    Lit, LitStr, Token,
+};
 
 use crate::variant::Variant;
 
@@ -109,7 +115,10 @@ impl Parse for EmlPath {
             };
         }
         if dot.is_some() {
-            parts.push(EmlPathPart::Prop(format_ident!("DOT_AUTOCOMPLETE_TOKEN", span = dot.span())));
+            parts.push(EmlPathPart::Prop(format_ident!(
+                "DOT_AUTOCOMPLETE_TOKEN",
+                span = dot.span()
+            )));
         }
         if parts.is_empty() {
             throw!(input, "EmlPath should contain at least one part");
@@ -135,22 +144,31 @@ impl Parse for EmlParam {
         } else {
             None
         };
-        Ok(EmlParam { extension, path, value })
+        Ok(EmlParam {
+            extension,
+            path,
+            value,
+        })
     }
 }
 
 impl EmlParam {
-    pub fn build_extension(&self, ctx: &EmlContext, tag: &Ident, entity: &TokenStream) -> syn::Result<TokenStream> {
+    pub fn build_extension(
+        &self,
+        ctx: &EmlContext,
+        tag: &Ident,
+        entity: &TokenStream,
+    ) -> syn::Result<TokenStream> {
         let cst = ctx.constructivism();
         let ext_ident = &self.extension;
-        let mut ext = quote! { 
+        let mut ext = quote! {
             <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance().#ext_ident()
         };
         for part in self.path.0.iter() {
             ext = match part {
                 EmlPathPart::Prop(ident) => {
                     quote! { #ext.#ident() }
-                },
+                }
                 EmlPathPart::Index(ident) => {
                     let ident = ident.to_string();
                     quote! { #ext.at(#ident) }
@@ -160,7 +178,7 @@ impl EmlParam {
         // Ok(quote! { #ext; })
         if let Some(value) = &self.value {
             let value = Variant::build(value, ctx)?;
-            let assign = quote_spanned!{ value.span()=>
+            let assign = quote_spanned! { value.span()=>
                 __ext__.assign(#entity, #value)
             };
             Ok(quote! {{
@@ -199,7 +217,10 @@ impl Parse for EmlParams {
                 input.parse::<Token![,]>()?;
             }
         }
-        Ok(EmlParams { extended, common: Params { items: common } })
+        Ok(EmlParams {
+            extended,
+            common: Params { items: common },
+        })
     }
 }
 
@@ -208,8 +229,13 @@ impl EmlParams {
         self.common.build_construct(ctx, tag, false)
     }
 
-    pub fn build_extensions(&self, ctx: &EmlContext, tag: &Ident, entity: &TokenStream) -> syn::Result<TokenStream> {
-        let mut out = quote! { };
+    pub fn build_extensions(
+        &self,
+        ctx: &EmlContext,
+        tag: &Ident,
+        entity: &TokenStream,
+    ) -> syn::Result<TokenStream> {
+        let mut out = quote! {};
         for param in self.extended.iter() {
             let ext = param.build_extension(ctx, tag, entity)?;
             out = quote! { #out #ext };
@@ -223,7 +249,10 @@ impl EmlParams {
         content.parse()
     }
     pub fn empty() -> Self {
-        EmlParams { common: Params::empty(), extended: vec![] }
+        EmlParams {
+            common: Params::empty(),
+            extended: vec![],
+        }
     }
 }
 
@@ -608,7 +637,9 @@ impl EmlNode {
             }}
         };
         let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
-        let apply_extensions = self.args.build_extensions(ctx, tag, &quote!{ __entity__ })?;
+        let apply_extensions = self
+            .args
+            .build_extensions(ctx, tag, &quote! { __entity__ })?;
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;

@@ -1240,7 +1240,7 @@ dependencies = [
 [[package]]
 name = "constructivism_macro_gen"
 version = "0.1.0"
-source = "git+https://github.com/polako-rs/constructivism#29fdac8bd08564e139057a484429b2bdbe92569c"
+source = "git+https://github.com/polako-rs/constructivism#d7ec940b32963399b714348df3941d9750e1e411"
 dependencies = [
  "quote",
  "syn 2.0.37",
@@ -1249,7 +1249,7 @@ dependencies = [
 [[package]]
 name = "constructivist"
 version = "0.0.1"
-source = "git+https://github.com/polako-rs/constructivism#29fdac8bd08564e139057a484429b2bdbe92569c"
+source = "git+https://github.com/polako-rs/constructivism#d7ec940b32963399b714348df3941d9750e1e411"
 dependencies = [
  "constructivism_macro_gen",
  "proc-macro2",
@@ -2972,9 +2972,9 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82870da09c57a8a5a50f830ce8993a6637b9a4932f69257f12aea3fa68f588c9"
+checksum = "96ffc872aa6d5b1037b0daf795d7c16defaf2715f1f297475362ad9d30aefb7a"
 dependencies = [
  "arrayvec",
  "grid",

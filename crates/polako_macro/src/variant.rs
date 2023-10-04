@@ -1,8 +1,13 @@
-use constructivist::{proc::Value, prelude::Context, throw};
-use proc_macro2::{TokenStream, TokenTree, Span};
-use syn::{Ident, Expr, parse::Parse, Token, token::{Bracket, Brace}, spanned::Spanned, braced};
+use constructivist::{prelude::Context, proc::Value, throw};
+use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
-
+use syn::{
+    braced,
+    parse::Parse,
+    spanned::Spanned,
+    token::{Brace, Bracket},
+    Expr, Ident, Token,
+};
 
 #[derive(Clone)]
 pub enum Variant {
@@ -20,7 +25,12 @@ impl Parse for Variant {
             if outer.peek(Brace) {
                 let inner;
                 braced!(inner in outer);
-                Ok(Variant::Prop(inner.parse_terminated(Ident::parse, Token![.])?.into_iter().collect()))
+                Ok(Variant::Prop(
+                    inner
+                        .parse_terminated(Ident::parse, Token![.])?
+                        .into_iter()
+                        .collect(),
+                ))
             } else {
                 Ok(Variant::Expr(outer.parse()?))
             }
@@ -34,7 +44,7 @@ impl Value for Variant {
         Ok(match item {
             Variant::Expr(e) => quote! { #e },
             Variant::Color(c) => c.build(ctx)?,
-            Variant::Prop(_) => quote! { },
+            Variant::Prop(_) => quote! {},
         })
     }
 }
@@ -51,13 +61,17 @@ impl Color {
         self.span.clone()
     }
     pub fn from_span(span: Span) -> Self {
-        Self { span, value: 0, digits: 0,}
+        Self {
+            span,
+            value: 0,
+            digits: 0,
+        }
     }
     fn push_digit(&mut self, mut digit: usize) {
         if digit > 15 {
             digit = 15;
         }
-        self.value <<=  4;
+        self.value <<= 4;
         self.value |= digit;
         self.digits += 1;
     }
@@ -66,7 +80,6 @@ impl Color {
     }
     pub fn rgba(&self) -> syn::Result<(f32, f32, f32, f32)> {
         match self.digits {
-
             // rgb, alpha = 1.0
             3 => Ok((
                 ((self.value & 0x0f00) >> 08) as f32 / 15.,
@@ -100,7 +113,10 @@ impl Color {
             )),
 
             _ => {
-                throw!(self, "Color is supposed to consists of 3, 4, 6 or 8 digits in total.");
+                throw!(
+                    self,
+                    "Color is supposed to consists of 3, 4, 6 or 8 digits in total."
+                );
             }
         }
     }
@@ -109,7 +125,6 @@ impl Color {
         let bevy = ctx.path("bevy");
         Ok(quote!(#bevy::prelude::Color::rgba(#r, #g, #b, #a)))
     }
-
 }
 
 impl Parse for Color {
@@ -126,9 +141,12 @@ impl Parse for Color {
                 for ch in repr.chars().into_iter() {
                     match ch {
                         _ if color.is_complete() => {
-                            throw!(hash, "Color is supposed to consists of 3, 4, 6 or 8 digits in total.");
-                        },
-                        ' ' => { },
+                            throw!(
+                                hash,
+                                "Color is supposed to consists of 3, 4, 6 or 8 digits in total."
+                            );
+                        }
+                        ' ' => {}
                         '0' => color.push_digit(0x0),
                         '1' => color.push_digit(0x1),
                         '2' => color.push_digit(0x2),
@@ -147,7 +165,7 @@ impl Parse for Color {
                         'f' => color.push_digit(0xf),
                         ch => {
                             throw!(input, "Unexpected Color digit: '{}'.", ch);
-                        },
+                        }
                     }
                 }
                 if color.is_complete() {
@@ -157,7 +175,10 @@ impl Parse for Color {
                 }
             }
             if ![3, 4, 6, 8].contains(&color.digits) {
-                throw!(hash, "Color is supposed to consists of 3, 4, 6 or 8 digits in total.");
+                throw!(
+                    hash,
+                    "Color is supposed to consists of 3, 4, 6 or 8 digits in total."
+                );
             }
             Ok((color, rest))
         })

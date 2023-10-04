@@ -26,7 +26,6 @@ fn setup(mut commands: Commands) {
     });
 }
 
-
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
 pub struct Div {
