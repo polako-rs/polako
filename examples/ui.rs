@@ -1,35 +1,54 @@
 use bevy::prelude::*;
 use polako::eml::*;
+use polako::flow::*;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_systems(Startup, setup)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Polako UI Sample".into(),
+                resolution: (450., 400.).into(),
+                position: WindowPosition::At(IVec2::new(300, 300)),
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_plugins(FlowPlugin)
+        .add_systems(Startup, hello_world)
         .add_systems(Update, ui_text_system)
         .add_systems(Update, div_system)
         .run();
 }
 
-fn setup(mut commands: Commands) {
+
+fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(eml! {
+        resource(time, Time);
+        bind(time.elapsed_seconds.fmt("{:0.2}") => elapsed.text);
+        bind(time.elapsed_seconds * 0.5 - 0.5 => content.bg.r);
+        bind(content.bg.hex => color.text);
         Body + Name { .value: "body" } [
-            Column { .bg: #9d9d9d, .s.padding: [25, 50] } [
+            content: Column { .bg: #9d9d9d, .s.padding: [25, 50] }[
                 Div { .bg: #dedede, .s.padding: 50 } [
                     "Hello world!"
                 ],
-                Label { .text: "This is awesome!", .text_color: #9f2d2d },
-                Row [ "T", "h", "i", "s", " ", "i", "s"],
-                Row [ "A", "W", "E", "S", "O", "M", "E", "!"],
+                Row [
+                    "Elapsed: ", elapsed: Label { .text: "0.00" }
+                ],
+                Row [
+                    "Color: ", color: Label
+                ]
             ]
         ]
-    });
+    })
 }
 
 #[derive(Component, Construct)]
 #[construct(Div -> Empty)]
 pub struct Div {
     #[prop(construct)]
+    /// The background color of element
     bg: Color,
 }
 impl Element for Div {
@@ -44,6 +63,7 @@ impl Element for Div {
 
 #[derive(Component, Behaviour)]
 pub struct UiText {
+    /// The text value of UiText element.
     pub text: String,
     #[param(default = Color::hex("2f2f2f").unwrap())]
     pub text_color: Color,
@@ -120,7 +140,7 @@ impl Element for Row {
 use bevy::ecs::world::EntityMut;
 use polako_constructivism::Is;
 impl DivDesign {
-    // Div can accpet string literals as content
+    // Div can accept string literals as content
     pub fn push_text<'c, S: AsRef<str>>(
         &self,
         world: &mut World,
@@ -141,7 +161,7 @@ impl DivDesign {
         content.push(model.entity);
         Implemented
     }
-    // Everything based on Div can access the styles using param extensions: `Row { .s.padding: 25 }`
+    /// Everything based on Div can access the styles using param extensions: `Row { .s.padding: 25 }`
     pub fn s(&self) -> &'static Styles {
         &Styles
     }
@@ -149,6 +169,7 @@ impl DivDesign {
 
 pub struct Styles;
 impl Styles {
+    /// The amount of space between the edges of a node and its contents in pixels.
     pub fn padding<T: IntoRect>(&self) -> StyleProperty<T> {
         StyleProperty(|mut entity, padding| {
             let rect = padding.into_rect();
@@ -195,7 +216,7 @@ impl WithText for Text {
     }
 }
 
-/// bypase Div.background to BackgroundColor.0 when changed
+/// bypass Div.background to BackgroundColor.0 when changed
 /// and Div.padding to Style.padding
 fn div_system(mut colors: Query<(&Div, &mut BackgroundColor), Changed<Div>>) {
     colors.for_each_mut(|(div, mut bg)| {
@@ -204,13 +225,11 @@ fn div_system(mut colors: Query<(&Div, &mut BackgroundColor), Changed<Div>>) {
 }
 
 /// bypass UiText text value & color to Text.sections[0] when changed
-fn ui_text_system(mut texts: Query<(Entity, &UiText, &mut Text), Changed<UiText>>) {
-    for (entity, ui_text, mut text) in texts.iter_mut() {
-        info!("ui_text_system");
+fn ui_text_system(mut texts: Query<(&UiText, &mut Text), Changed<UiText>>) {
+    for (ui_text, mut text) in texts.iter_mut() {
         if text.sections.is_empty() {
             *text = Text::with_text("");
         }
-        info!("set text_color = {:?} for {entity:?}", ui_text.text_color);
         text.sections[0].value = ui_text.text.clone();
         text.sections[0].style.color = ui_text.text_color.into();
     }

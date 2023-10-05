@@ -67,6 +67,29 @@ derive_construct! {
     };
 }
 
+pub trait ColorProps {
+    fn get_hex(&self) -> String; 
+    fn set_hex(&mut self, hex: impl AsRef<str>);
+}
+impl ColorProps for Color {
+    fn get_hex(&self) -> String {
+        format!(
+          "{:02x}{:2x}{:02x}{:02x}",
+          (self.r().clamp(0., 1.) * 255.).round() as usize,
+          (self.g().clamp(0., 1.) * 255.).round() as usize,
+          (self.b().clamp(0., 1.) * 255.).round() as usize,
+          (self.a().clamp(0., 1.) * 255.).round() as usize,
+        )
+    }
+    fn set_hex(&mut self, hex: impl AsRef<str>) {
+        let hex = hex.as_ref();
+        *self = Color::hex(hex).unwrap_or_else(|_| {
+          info!("Cant parse '{hex}` as color, using WHITE.");
+          Color::WHITE
+        })
+  }
+
+}
 derive_construct! {
     seq => Color -> Nothing;
     construct => (hex: String = format!("")) -> {
@@ -75,12 +98,14 @@ derive_construct! {
     props => {
         /// Red channel
         r: f32 = [r, set_r];
-        /// Green channel
+        /// Green channel Color
         g: f32 = [g, set_g];
-        /// Blue channel
+        /// Blue channel of Color
         b: f32 = [b, set_b];
-        /// Alpha channel
+        /// Alpha channel of Color
         a: f32 = [a, set_a];
+        /// Hex representation Color
+        hex: String = [get_hex, set_hex];
     };
 }
 
@@ -98,7 +123,9 @@ derive_construct! {
         Time::default()
     };
     props => {
+        /// How much time has advanced since startup, as f32 seconds.
         elapsed_seconds: f32 = [elapsed_seconds, readonly];
+        /// How much time has advanced since the last update, as f32 seconds.
         delta_seconds: f32 = [delta_seconds, readonly];
     };
 }

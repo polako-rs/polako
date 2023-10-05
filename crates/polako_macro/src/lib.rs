@@ -9,6 +9,7 @@ implement_constructivism_macro!("polako", variant::Variant);
 mod derive;
 mod eml;
 mod variant;
+mod exts;
 
 #[proc_macro]
 pub fn eml(input: TokenStream) -> TokenStream {

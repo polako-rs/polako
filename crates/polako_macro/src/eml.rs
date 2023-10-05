@@ -1,24 +1,15 @@
 use std::collections::HashMap;
-
-use constructivist::{context::Context, proc::*};
+use constructivist::{context::Context, proc::*, throw};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
-
 use syn::{
     braced, bracketed,
     parse::Parse,
     spanned::Spanned,
     token::{self, Bracket},
-    Lit, LitStr, Token,
+    Lit, LitStr, Token, parenthesized, parse_quote,
 };
-
-use crate::variant::Variant;
-
-macro_rules! throw {
-    ($loc:expr, $msg:expr) => {
-        return Err(syn::Error::new($loc.span(), $msg));
-    };
-}
+use crate::{variant::Variant, exts::*};
 
 pub trait ParamsExt {
     fn build_patch(
@@ -256,6 +247,157 @@ impl EmlParams {
     }
 }
 
+pub struct BindPath {
+    path: Vec<Ident>,
+    map: Option<BindMap>,
+}
+
+impl Parse for BindPath {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut path = vec![];
+        let mut map = None;
+        loop {
+            if let Some(prop_map) = input.parse_prop_map(&mut path)? {
+                map = Some(prop_map);
+                break;
+            }
+            path.push(input.parse()?);
+            let dot = if input.peek(Token![.]) {
+                Some(input.parse::<Token![.]>()?)
+            } else {
+                None
+            };
+            if input.is_empty() || input.peek_bind_direction() {
+                if let Some(dot) = dot {
+                    path.push(format_ident!(
+                        "DOT_AUTOCOMPLETE_TOKEN",
+                        span = dot.span()
+                    ));
+                }
+                break;
+            }
+        }
+        Ok(BindPath { path, map })
+
+    }
+}
+
+pub enum BindDirection {
+    Forward,
+    Backward,
+    Both,
+}
+
+impl Parse for BindDirection {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![=>]) {
+            input.parse::<Token![=>]>()?;
+            Ok(BindDirection::Forward)
+        } else if input.peek(Token![<=]) {
+            input.parse::<Token![<=]>()?;
+            Ok(BindDirection::Backward)
+        } else if input.peek(Token![<=]) && input.peek2(Token![=>]) {
+            input.parse::<Token![<=]>()?;
+            input.parse::<Token![=>]>()?;
+            Ok(BindDirection::Both)
+        } else {
+            throw!(input, "Expected bind direction '=>', '<=' or '<==>'");
+        }
+    }
+}
+
+pub struct Bind {
+    from: BindPath,
+    to: BindPath,
+    #[allow(unused)]
+    bidirectional: bool
+}
+
+impl Parse for Bind {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let first: BindPath = input.parse()?;
+        if let Ok(direction) = input.parse::<BindDirection>() {
+            let second: BindPath = input.parse()?;
+            Ok(match direction {
+                BindDirection::Forward => Bind {
+                    from: first,
+                    to: second,
+                    bidirectional: false,
+                },
+                BindDirection::Backward => Bind {
+                    from: second,
+                    to: first,
+                    bidirectional: true,
+                },
+                BindDirection::Both => Bind {
+                    from: first,
+                    to: second,
+                    bidirectional: true,
+                }
+            })
+        } else {
+            let second = BindPath {
+                map: None,
+                path: vec![
+                    format_ident!("DOT_AUTOCOMPLETE_TOKEN"),
+                    format_ident!("DOT_AUTOCOMPLETE_TOKEN"),
+                ]
+            };
+            Ok(Bind { from: first, to: second, bidirectional: false })
+        }
+    }
+}
+
+pub enum EmlDirective {
+    Resource(Ident, Ident),
+    Bind(Bind),
+    None,
+}
+
+impl EmlDirective {
+    pub fn is_none(&self) -> bool {
+        match  self {
+            EmlDirective::None => true,
+            _ => false,
+        }
+    }
+}
+
+impl Parse for EmlDirective {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if !(input.peek(syn::Ident) && input.peek2(token::Paren)) {
+            return Ok(EmlDirective::None);
+        }
+        let ident = input.parse::<Ident>()?;
+        Ok(match ident.to_string().as_str() {
+            "resource" => {
+                let content;
+                parenthesized!(content in input);
+                let ident = content.parse()?;
+                content.parse::<Token![,]>()?;
+                let ty = content.parse()?;
+                if input.peek(Token![;]) {
+                    input.parse::<Token![;]>()?;
+                }
+                EmlDirective::Resource(ident, ty)
+            },
+            "bind" => {
+                let content;
+                parenthesized!(content in input);
+                let bind = content.parse()?;
+                if input.peek(Token![;]) {
+                    input.parse::<Token![;]>()?;
+                }
+                EmlDirective::Bind(bind)
+
+            },
+            _ => {
+                throw!(ident, "Unknown dirrective");
+            }
+        })
+    }
+}
+
 pub enum EmlChild {
     Literal(LitStr),
     Node(EmlNode),
@@ -488,6 +630,7 @@ impl Parse for EmlRoot {
 
 pub struct EmlContext {
     context: Context,
+    variables: HashMap<Ident, Variable>,
     strict: bool,
 }
 
@@ -505,16 +648,16 @@ impl EmlRoot {
             EmlRoot::Base { tag, .. } => tag.clone(),
         }
     }
-    pub fn fetch_models(&self, models: &mut HashMap<Ident, (Ident, bool)>) -> syn::Result<()> {
+    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Variable>) -> syn::Result<()> {
         match self {
-            EmlRoot::Element(node) => node.fetch_models(models, true),
+            EmlRoot::Element(node) => node.fetch_variables(variables, true),
             EmlRoot::Base {
                 children: EmlContent::Declared(items),
                 ..
             } => {
                 for item in items.iter() {
                     if let EmlChild::Node(node) = item {
-                        node.fetch_models(models, false)?
+                        node.fetch_variables(variables, false)?
                     }
                 }
                 Ok(())
@@ -590,29 +733,38 @@ pub struct EmlNode {
 }
 
 impl EmlNode {
-    pub fn fetch_models(
-        &self,
-        models: &mut HashMap<Ident, (Ident, bool)>,
-        root: bool,
-    ) -> syn::Result<()> {
+    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Variable>, root: bool) -> syn::Result<()> {
         if let Some(model) = self.model.clone() {
-            if models.contains_key(&model) {
+            if variables.contains_key(&model) {
                 throw!(
                     model,
-                    format!("Model {} already defined", model.to_string())
+                    "Model {} already defined",
+                    model.to_string()
                 );
             }
-
-            models.insert(model, (self.tag.clone(), root));
+            variables.insert(model.clone(), if root {
+                 Variable {
+                    ident: parse_quote! { __root__ },
+                    ty: self.tag.clone(),
+                    kind: VariableKind::Model ,
+                }
+            } else {
+                Variable {
+                    ident: model.clone(),
+                    ty: self.tag.clone(),
+                    kind: VariableKind::Model,
+                }
+            });
         }
         if let EmlContent::Declared(children) = &self.children {
             for child in children.iter() {
                 if let EmlChild::Node(node) = child {
-                    node.fetch_models(models, false)?
+                    node.fetch_variables(variables, false)?
                 }
             }
         }
         Ok(())
+
     }
 
     pub fn build(&self, ctx: &EmlContext, as_root: bool) -> syn::Result<TokenStream> {
@@ -658,11 +810,12 @@ impl EmlNode {
 
 impl Parse for EmlNode {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let tag: Ident = input.parse()?;
+        let mut tag: Ident = input.parse()?;
         let mut model: Option<Ident> = None;
         if input.peek(Token![:]) {
+            model = Some(tag);
             input.parse::<Token![:]>()?;
-            model = Some(input.parse()?);
+            tag = input.parse()?;
         }
         let args = if input.peek(token::Brace) {
             EmlParams::braced(input)?
@@ -681,20 +834,59 @@ impl Parse for EmlNode {
     }
 }
 
+pub enum VariableKind {
+    Model,
+    Resource,
+}
+
+pub struct Variable {
+    ident: Ident,
+    ty: Ident,
+    kind: VariableKind,
+}
+
+impl Variable {
+    pub fn is_helper(&self) -> bool {
+        &self.ident.to_string() == "DOT_AUTOCOMPLETE_TOKEN"
+    }
+    pub fn is_model(&self) -> bool {
+        match self.kind {
+            VariableKind::Model => true,
+            VariableKind::Resource => false,
+        }
+    }
+    pub fn is_resource(&self) -> bool {
+        match self.kind {
+            VariableKind::Model => false,
+            VariableKind::Resource => true,
+        }
+    }
+}
+
 pub struct Eml {
     pub span: Span,
     pub strict: bool,
+    pub directives: Vec<EmlDirective>,
     pub roots: Vec<EmlRoot>,
 }
 
 impl Parse for Eml {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut roots = vec![];
         let span = input.span();
+        let mut directives = vec![];
+        loop {
+            let direcitve = input.parse::<EmlDirective>()?;
+            if direcitve.is_none() {
+                break;
+            }
+            directives.push(direcitve);
+        }
+        let mut roots = vec![];
         for root in input.parse_terminated(EmlRoot::parse, Token![;])? {
             roots.push(root);
         }
         Ok(Eml {
+            directives,
             roots,
             span,
             strict: false,
@@ -703,35 +895,113 @@ impl Parse for Eml {
 }
 
 impl Eml {
-    pub fn fetch_models(&self) -> syn::Result<HashMap<Ident, (Ident, bool)>> {
-        let mut models = HashMap::new();
-        for root in self.roots.iter() {
-            root.fetch_models(&mut models)?;
+    pub fn fetch_variables(&self) -> syn::Result<HashMap<Ident, Variable>> {
+        let mut variables = HashMap::new();
+        let autocomplete = format_ident!("DOT_AUTOCOMPLETE_TOKEN");
+        variables.insert(autocomplete.clone(), Variable { 
+            ident: autocomplete.clone(),
+            ty: autocomplete.clone(),
+            kind: VariableKind::Model,
+        });
+        for directive in self.directives.iter() {
+            if let EmlDirective::Resource(ident, ty) = directive {
+                variables.insert(ident.clone(), Variable {
+                    ident: ident.clone(),
+                    ty: ty.clone(),
+                    kind: VariableKind::Resource,
+                });
+            }
         }
-        Ok(models)
+        for root in self.roots.iter() {
+            root.fetch_variables(&mut variables)?;
+        }
+        Ok(variables)
     }
     pub fn build(&self) -> syn::Result<TokenStream> {
         let bevy = quote! { ::bevy::prelude };
         let mut body = quote! {};
-        let models = self.fetch_models()?;
+        let variables = self.fetch_variables()?;
         let mut root_ty = None;
 
         let ctx = EmlContext {
+            variables,
             context: Context::new("polako"),
             strict: self.strict,
         };
         let eml = ctx.path("eml");
-        for (model, (tag, is_root)) in models.iter() {
-            if *is_root {
+        for (ident, variable) in ctx.variables.iter().filter(|v| v.1.is_model() && !v.1.is_helper()) {
+            let entity = &variable.ident;
+            let tag = &variable.ty;
+            if ident == entity {
                 body = quote! { #body
-                    let #model: #eml::Model<#tag> = #eml::Model::new(__root__);
+                    let #ident = world.spawn_empty().id();
+                    let #ident: #eml::Model<#tag> = #eml::Model::new(#ident);
                 }
             } else {
                 body = quote! { #body
-                    let #model = world.spawn_empty().id();
-                    let #model: #eml::Model<#tag> = #eml::Model::new(#model);
+                    let #ident: #eml::Model<#tag> = #eml::Model::new(#entity);
                 }
             }
+        }
+        for directive in self.directives.iter() {
+            let EmlDirective::Bind(bind) = directive else {
+                continue;
+            };
+            let mut from_path = bind.from.path.clone();
+            let from_var = from_path.remove(0);
+            let Some(from_var) = ctx.variables.get(&from_var) else {
+                throw!(from_var, "Undeclared variable {}", from_var.to_string());
+            };
+
+            let from_ty = &from_var.ty;
+            let from_prop = Prop {
+                root: parse_quote!(#from_ty),
+                path: from_path,
+            }.build(&ctx.context)?;
+            let from_prop = if let Some(map) = &bind.from.map {
+                let map = map.build(&ctx)?;
+                quote! { #from_prop.map(#map) }
+            } else {
+                from_prop
+            };
+            let from_bind = if from_var.is_model() {
+                let ident = &from_var.ident;
+                quote! { #ident.entity.get(#from_prop) }
+            } else {
+                quote! { #from_prop.into() }
+            };
+
+            let mut to_path = bind.to.path.clone();
+            let to_var = to_path.remove(0);
+            let Some(to_var) = ctx.variables.get(&to_var) else {
+                throw!(to_var, "Undeclared variable {}", to_var.to_string());
+            };
+            let to_ty = &to_var.ty;
+            let to_prop = Prop {
+                root: parse_quote!(#to_ty),
+                path: to_path,
+            }.build(&ctx.context)?;
+            if let Some(map) = &bind.to.map {
+                throw!(map, "Bind target prop can't be mapped.");
+            }
+            if to_var.is_resource() {
+                throw!(bind.to.path[0], "Resources can't be used as bind targets.");
+            }
+            let to_bind = {
+                let ident = &to_var.ident;
+                quote! { 
+                    #ident.entity.set(#to_prop)
+                }
+            };
+            body = if from_var.is_model() {
+                quote! { #body
+                    world.bind_component_to_component(#from_bind, #to_bind);
+                }
+            } else {
+                quote! { #body
+                    world.bind_resource_to_component(#from_bind, #to_bind);
+                }
+            };
         }
         for root in self.roots.iter() {
             let build = root.build(&ctx)?;

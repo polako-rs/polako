@@ -2583,6 +2583,7 @@ dependencies = [
  "bevy",
  "polako_constructivism",
  "polako_eml",
+ "polako_flow",
  "polako_macro",
 ]
 

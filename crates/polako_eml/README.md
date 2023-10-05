@@ -1,12 +1,6 @@
-New eml dialect:
-
-```rust
-eml! {
-    Label {
-        class[visible, red],
-        class[disabled] = {{ btn.disabled }}
-        style.margin: [1., 23.],
-        bind.value: {{ coolotbox.color }}
-    }
-}
-```
+- subjectivly beautiful
+- ecs-first
+- type safe
+- extendable
+- asset-consistent
+- 

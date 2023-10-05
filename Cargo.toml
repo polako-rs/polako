@@ -23,5 +23,6 @@ members = [
 bevy = "0.11.2"
 polako_constructivism = { path = "crates/polako_constructivism" }
 polako_eml = { path = "crates/polako_eml" }
+polako_flow = { path = "crates/polako_flow" }
 polako_macro = { path = "crates/polako_macro" }
 
