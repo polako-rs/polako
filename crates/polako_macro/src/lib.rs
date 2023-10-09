@@ -10,6 +10,7 @@ mod derive;
 mod eml;
 mod variant;
 mod exts;
+mod hand;
 
 #[proc_macro]
 pub fn eml(input: TokenStream) -> TokenStream {
