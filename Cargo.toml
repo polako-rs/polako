@@ -11,8 +11,10 @@ repository = "https://github.com/jkb0o/polako"
 [workspace]
 members = [
     "crates/polako_constructivism",
+    "crates/polako_core",
     "crates/polako_eml",
     "crates/polako_flow",
+    "crates/polako_input",
     "crates/polako_macro",
 ]
 

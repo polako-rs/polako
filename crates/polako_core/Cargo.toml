@@ -1,13 +1,10 @@
 [package]
-name = "polako_eml"
+name = "polako_core"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.11.2"
-polako_core = { path = "../polako_core"}
+bevy = "0.11.3"
 polako_constructivism = { path = "../polako_constructivism"}
-polako_flow = { path = "../polako_flow" }
-polako_macro = { path = "../polako_macro" }

@@ -1240,7 +1240,6 @@ dependencies = [
 [[package]]
 name = "constructivism_macro_gen"
 version = "0.1.0"
-source = "git+https://github.com/polako-rs/constructivism#d7ec940b32963399b714348df3941d9750e1e411"
 dependencies = [
  "quote",
  "syn 2.0.38",
@@ -1249,7 +1248,6 @@ dependencies = [
 [[package]]
 name = "constructivist"
 version = "0.0.1"
-source = "git+https://github.com/polako-rs/constructivism#d7ec940b32963399b714348df3941d9750e1e411"
 dependencies = [
  "constructivism_macro_gen",
  "proc-macro2",
@@ -2596,11 +2594,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "polako_core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "polako_constructivism",
+]
+
+[[package]]
 name = "polako_eml"
 version = "0.1.0"
 dependencies = [
  "bevy",
  "polako_constructivism",
+ "polako_core",
  "polako_flow",
  "polako_macro",
 ]
@@ -2611,6 +2618,15 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "polako_constructivism",
+]
+
+[[package]]
+name = "polako_input"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "polako_constructivism",
+ "polako_core",
 ]
 
 [[package]]
