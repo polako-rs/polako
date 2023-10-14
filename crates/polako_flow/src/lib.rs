@@ -1,6 +1,5 @@
 use std::{
-    any::TypeId, cell::RefCell, marker::PhantomData, ops::DerefMut, rc::Rc, sync::RwLock,
-    thread::ThreadId,
+    any::TypeId, cell::RefCell, marker::PhantomData, rc::Rc, sync::RwLock, thread::ThreadId,
 };
 
 use bevy::{
@@ -13,11 +12,40 @@ use polako_constructivism::*;
 pub struct FlowPlugin;
 impl Plugin for FlowPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, flow_system);
+        app.add_systems(Update, flow_loop);
         app.init_resource::<FlowIteration>();
         app.insert_resource(FlowResource::new());
-        app.insert_resource(FlowLoop::default());
         app.insert_resource(BindTargets::new());
+    }
+}
+
+pub fn flow_loop(world: &mut World) {
+    let flow = world.resource::<FlowResource>().clone();
+
+    // start the loop
+    world.resource_mut::<FlowIteration>().reset();
+    loop {
+        let mut schedule_ref = flow.schedule.borrow_mut();
+        // apply deferred scheduler edits
+        flow.queue
+            .take()
+            .into_iter()
+            .for_each(|c| c(&mut schedule_ref));
+
+        // apply deferred world edits
+        flow.commands.take().into_iter().for_each(|c| c(world));
+
+        // process schedule
+        schedule_ref.run(world);
+
+        // any changes?
+        if world.resource_mut::<FlowIteration>().repeats() {
+            // start the new iteration
+            world.resource_mut::<FlowIteration>().step();
+            continue;
+        } else {
+            break;
+        }
     }
 }
 
@@ -30,27 +58,6 @@ pub enum FlowSet {
     CleanupWriteChanges,
     Write,
     PopulateChanges,
-}
-
-pub fn flow_system(world: &mut World) {
-    let flow = world.resource::<FlowResource>().clone();
-    world.resource_mut::<FlowIteration>().reset();
-    loop {
-        let mut schedule_ref = flow.schedule.borrow_mut();
-        for add_systems in flow.queue.take() {
-            add_systems(schedule_ref.deref_mut());
-        }
-        for command in flow.commands.take() {
-            command(world);
-        }
-        schedule_ref.run(world);
-        world.resource_mut::<FlowIteration>().next();
-        if world.resource_mut::<FlowLoop>().should_repeat() {
-            continue;
-        } else {
-            break;
-        }
-    }
 }
 
 fn first_iteration(iteration: Res<FlowIteration>) -> bool {
@@ -68,7 +75,7 @@ fn collect_changes<T: Component>(
     changes.entities.extend(changed.iter());
 }
 
-pub fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
+fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
     mut sources: Query<&mut ComponentBindSources<S, T, V>>,
     mut targets: ResMut<BindTargets>,
     mut removals: RemovedComponents<BindTarget>,
@@ -82,7 +89,7 @@ pub fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
     }
 }
 
-pub fn read_component_changes<S: Component, T: Component, V: Bindable>(
+fn read_component_changes<S: Component, T: Component, V: Bindable>(
     components: Query<(&ComponentBindSources<S, T, V>, &S)>,
     changed: Res<ChangedEntities<S>>,
     changes: Changes<T, V>,
@@ -101,7 +108,7 @@ pub fn read_component_changes<S: Component, T: Component, V: Bindable>(
     }
 }
 
-pub fn cleanup_resource_readers<S: Resource, T: Component, V: Bindable>(
+fn cleanup_resource_readers<S: Resource, T: Component, V: Bindable>(
     mut sources: ResMut<ResourceBindSources<S, T, V>>,
     mut removals: RemovedComponents<BindTarget>,
 ) {
@@ -110,7 +117,7 @@ pub fn cleanup_resource_readers<S: Resource, T: Component, V: Bindable>(
     }
 }
 
-pub fn read_resource_changes<S: Resource, T: Component, V: Bindable>(
+fn read_resource_changes<S: Resource, T: Component, V: Bindable>(
     res: Res<S>,
     sources: Res<ResourceBindSources<S, T, V>>,
     changes: Changes<T, V>,
@@ -129,13 +136,11 @@ pub fn read_resource_changes<S: Resource, T: Component, V: Bindable>(
     }
 }
 
-pub fn cleanup_write_component_changes<T: Component>(
-    changed_entities: Res<Channel<ChangedEntity<T>>>,
-) {
+fn cleanup_write_component_changes<T: Component>(changed_entities: Res<Channel<ChangedEntity<T>>>) {
     changed_entities.clear()
 }
 
-pub fn write_component_changes<T: Component, V: Bindable>(
+fn write_component_changes<T: Component, V: Bindable>(
     mut components: Query<(Entity, &mut T)>,
     changes: Changes<T, V>,
     changed_entities: Res<Channel<ChangedEntity<T>>>,
@@ -154,11 +159,11 @@ pub fn write_component_changes<T: Component, V: Bindable>(
     });
 }
 
-pub fn populate_changes<T: Component>(
+fn populate_changes<T: Component>(
     changes: Res<Channel<ChangedEntity<T>>>,
     mut changed_entities: ResMut<ChangedEntities<T>>,
     mut populated: Local<HashSet<Entity>>,
-    mut flow: Deferred<FlowControl>,
+    mut flow: Deferred<FlowLoopControl>,
 ) {
     populated.clear();
     changed_entities.entities.clear();
@@ -171,73 +176,68 @@ pub fn populate_changes<T: Component>(
 }
 
 #[derive(Resource, Clone, Copy, Default)]
-pub enum FlowIteration {
+enum FlowIteration {
     #[default]
     First,
-    Rest,
+    Repeat,
+    Break,
 }
 
 impl FlowIteration {
-    pub fn first(&self) -> bool {
+    /// Returns true if is is first iteration in the flow_loop
+    fn first(&self) -> bool {
         matches!(self, FlowIteration::First)
     }
-    pub fn reset(&mut self) {
+
+    /// Returns true it we need one more iteration in the flow_loop
+    fn repeats(&self) -> bool {
+        matches!(self, FlowIteration::Repeat)
+    }
+    /// Resets the to the start of the flow_loop
+    fn reset(&mut self) {
         *self = FlowIteration::First
     }
-    pub fn next(&mut self) {
-        *self = FlowIteration::Rest
-    }
-}
-
-#[derive(Resource, Default)]
-struct FlowLoop(bool);
-impl FlowLoop {
+    /// Requests one more iteration in the flow_loop
     fn repeat(&mut self) {
-        self.0 = true;
+        *self = FlowIteration::Repeat
     }
-    fn should_repeat(&mut self) -> bool {
-        let retry = self.0;
-        self.0 = false;
-        retry
+    /// Resets to the start of the non-first iteration of the flow_loop
+    fn step(&mut self) {
+        *self = FlowIteration::Break
     }
 }
 
 #[derive(Default)]
-pub struct FlowControl(bool);
-impl FlowControl {
-    pub fn repeat(&mut self) {
+struct FlowLoopControl(bool);
+impl FlowLoopControl {
+    fn repeat(&mut self) {
         self.0 = true;
     }
 }
-impl SystemBuffer for FlowControl {
+impl SystemBuffer for FlowLoopControl {
     fn apply(&mut self, _: &bevy::ecs::system::SystemMeta, world: &mut World) {
         if self.0 {
             self.0 = false;
-            world.resource_mut::<FlowLoop>().repeat();
+            world.resource_mut::<FlowIteration>().repeat();
         }
     }
 }
 
 #[derive(Resource, Deref, Clone)]
-pub struct FlowResource(Rc<Flow>);
+struct FlowResource(Rc<Flow>);
 unsafe impl Send for FlowResource {}
 unsafe impl Sync for FlowResource {}
 impl FlowResource {
-    pub fn new() -> Self {
+    fn new() -> Self {
         FlowResource(Rc::new(Flow::new()))
     }
 }
 
-pub struct Flow {
+struct Flow {
     schedule: RefCell<Schedule>,
     queue: RefCell<Vec<Box<dyn FnOnce(&mut Schedule)>>>,
     commands: RefCell<Vec<Box<dyn FnOnce(&mut World)>>>,
     registry: RegisteredSystems,
-    // registered_cleanup_changes_systems: RefCell<HashSet<(TypeId, TypeId)>>,
-    // registered_read_component_systems: RefCell<HashSet<(TypeId, TypeId, TypeId)>>,
-    // registered_read_resource_systems: RefCell<HashSet<(TypeId, TypeId, TypeId)>>,
-    // registered_populate_changes_systems: RefCell<HashSet<TypeId>>,
-    // registered_wite_systems: RefCell<HashSet<(TypeId, TypeId)>>,
 }
 
 struct HashCell(RefCell<HashSet<TypeId>>);
@@ -270,7 +270,7 @@ impl RegisteredSystems {
 }
 
 impl Flow {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let mut schedule = Schedule::new();
         schedule.configure_sets((
             FlowSet::CleanupReaders.after(FlowSet::CleanupChanges),
@@ -296,7 +296,7 @@ impl Flow {
         self.commands.borrow_mut().push(Box::new(func))
     }
 
-    pub fn register_populate_systems<C: Component>(&self) {
+    fn register_populate_systems<C: Component>(&self) {
         self.registry.populate_changes.register::<C, _>(|| {
             self.edit_schedule(|schedule| {
                 schedule.add_systems(
@@ -316,7 +316,7 @@ impl Flow {
         });
     }
 
-    pub fn register_component_read_systems<S: Component, T: Component, V: Bindable>(&self) {
+    fn register_component_read_systems<S: Component, T: Component, V: Bindable>(&self) {
         self.register_populate_systems::<S>();
         self.registry.cleanup_changes.register::<(T, V), _>(|| {
             self.edit_schedule(|schedule| {
@@ -333,7 +333,7 @@ impl Flow {
         })
     }
 
-    pub fn register_resource_read_systems<S: Resource, T: Component, V: Bindable>(&self) {
+    fn register_resource_read_systems<S: Resource, T: Component, V: Bindable>(&self) {
         self.registry.cleanup_changes.register::<(T, V), _>(|| {
             self.edit_schedule(|schedule| {
                 schedule.add_systems(cleanup_changes::<T, V>.in_set(FlowSet::CleanupChanges));
@@ -349,7 +349,7 @@ impl Flow {
         });
     }
 
-    pub fn register_component_write_systems<T: Component, V: Bindable>(&self) {
+    fn register_component_write_systems<T: Component, V: Bindable>(&self) {
         self.register_populate_systems::<T>();
         self.registry.write.register::<(T, V), _>(|| {
             self.edit_schedule(|schedule| {
@@ -443,21 +443,21 @@ impl WorldFlow for World {
 pub trait Bindable: Send + Sync + Clone + std::fmt::Debug + PartialEq + 'static {}
 impl<T: Send + Sync + Clone + PartialEq + std::fmt::Debug + 'static> Bindable for T {}
 
-pub type Changes<'w, T, V> = Res<'w, Channel<ApplyChange<T, V>>>;
+type Changes<'w, T, V> = Res<'w, Channel<ApplyChange<T, V>>>;
 #[derive(Resource)]
-pub struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
+struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
 unsafe impl<T> Send for Channel<T> {}
 unsafe impl<T> Sync for Channel<T> {}
 impl<T> Channel<T> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self(RwLock::new(HashMap::new()))
     }
-    pub fn clear(&self) {
+    fn clear(&self) {
         for cell in self.0.read().unwrap().values() {
             cell.borrow_mut().clear()
         }
     }
-    pub fn send(&self, event: T) {
+    fn send(&self, event: T) {
         let id = std::thread::current().id();
         {
             let read = self.0.read().unwrap();
@@ -474,7 +474,7 @@ impl<T> Channel<T> {
                 .insert(id, Rc::new(RefCell::new(vec![event])));
         }
     }
-    pub fn recv<F: FnMut(&T)>(&self, mut recv: F) {
+    fn recv<F: FnMut(&T)>(&self, mut recv: F) {
         for cell in self.0.read().unwrap().values() {
             let borrow = cell.borrow();
             for item in borrow.iter() {
@@ -485,12 +485,12 @@ impl<T> Channel<T> {
 }
 
 #[derive(Resource)]
-pub struct ChangedEntities<C: Component> {
+struct ChangedEntities<C: Component> {
     entities: Vec<Entity>,
     marker: PhantomData<C>,
 }
 impl<C: Component> ChangedEntities<C> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             entities: vec![],
             marker: PhantomData,
@@ -498,12 +498,12 @@ impl<C: Component> ChangedEntities<C> {
     }
 }
 
-pub struct ChangedEntity<T> {
+struct ChangedEntity<T> {
     entity: Entity,
     marker: PhantomData<T>,
 }
 impl<T> ChangedEntity<T> {
-    pub fn new(entity: Entity) -> Self {
+    fn new(entity: Entity) -> Self {
         Self {
             entity,
             marker: PhantomData,
@@ -511,18 +511,18 @@ impl<T> ChangedEntity<T> {
     }
 }
 
-pub struct BindSource<S, T, V: Bindable> {
+struct BindSource<S, T, V: Bindable> {
     target: Entity,
     read: Reader<S, V>,
     writer: Writer<T, V>,
 }
 #[derive(Component)]
-pub struct ComponentBindSources<S: Component, T: Component, V: Bindable>(
+struct ComponentBindSources<S: Component, T: Component, V: Bindable>(
     HashMap<Entity, Vec<BindSource<S, T, V>>>,
 );
 
 #[derive(Resource)]
-pub struct ResourceBindSources<S: Resource, T: Component, V: Bindable>(
+struct ResourceBindSources<S: Resource, T: Component, V: Bindable>(
     HashMap<Entity, Vec<BindSource<S, T, V>>>,
 );
 impl<S: Resource, T: Component, V: Bindable> ResourceBindSources<S, T, V> {
@@ -532,12 +532,12 @@ impl<S: Resource, T: Component, V: Bindable> ResourceBindSources<S, T, V> {
 }
 
 #[derive(Component)]
-pub struct BindTarget;
+struct BindTarget;
 
 #[derive(Resource)]
-pub struct BindTargets(HashMap<Entity, HashSet<Entity>>);
+struct BindTargets(HashMap<Entity, HashSet<Entity>>);
 impl BindTargets {
-    pub fn new() -> Self {
+    fn new() -> Self {
         BindTargets(HashMap::new())
     }
 }
@@ -547,7 +547,7 @@ impl BindTargets {
 // }
 
 #[derive(Event)]
-pub struct ApplyChange<H: Component, V: Bindable> {
+struct ApplyChange<H: Component, V: Bindable> {
     target: Entity,
     writer: Writer<H, V>,
     value: V,
