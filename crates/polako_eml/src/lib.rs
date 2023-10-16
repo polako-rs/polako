@@ -18,7 +18,13 @@ pub mod msg {
     pub struct ElementAsContent;
 }
 
-pub trait Element: Component + Construct + Sized {
+pub trait Element: ElementBuilder {
+    type Signals: Singleton;
+}
+
+
+
+pub trait ElementBuilder: Component + Construct + Sized {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self>;
 }
 
@@ -36,7 +42,7 @@ impl IntoBundle for () {
     }
 }
 
-impl<T: Element> IntoBundle for T {
+impl<T: ElementBuilder> IntoBundle for T {
     type Output = Self;
     fn into_bundle(self) -> Self::Output {
         self
@@ -64,12 +70,12 @@ pub trait Behaviour: Segment + Component {}
 /// tree is built. Like `AcceptOnly<T>` in `#[construct(TabView -> AcceptOnly<Tab> -> Div)]
 pub trait Constraint: Segment + IntoBundle {}
 
-pub struct Model<C: Element> {
+pub struct Model<C: ElementBuilder> {
     pub entity: Entity,
     marker: PhantomData<C>,
 }
 
-impl<C: Element> Model<C> {
+impl<C: ElementBuilder> Model<C> {
     pub fn new(entity: Entity) -> Self {
         Model {
             entity,
@@ -78,9 +84,9 @@ impl<C: Element> Model<C> {
     }
 }
 
-impl<C: Element> Copy for Model<C> {}
+impl<C: ElementBuilder> Copy for Model<C> {}
 
-impl<C: Element> std::fmt::Debug for Model<C> {
+impl<C: ElementBuilder> std::fmt::Debug for Model<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Model")
             .field("entity", &self.entity)
@@ -88,7 +94,7 @@ impl<C: Element> std::fmt::Debug for Model<C> {
     }
 }
 
-impl<C: Element> Clone for Model<C> {
+impl<C: ElementBuilder> Clone for Model<C> {
     fn clone(&self) -> Self {
         Self {
             entity: self.entity,
@@ -97,12 +103,12 @@ impl<C: Element> Clone for Model<C> {
     }
 }
 
-pub struct Eml<Root: Element>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
+pub struct Eml<Root: ElementBuilder>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
 
-unsafe impl<Root: Element> Send for Eml<Root> {}
-unsafe impl<Root: Element> Sync for Eml<Root> {}
+unsafe impl<Root: ElementBuilder> Send for Eml<Root> {}
+unsafe impl<Root: ElementBuilder> Sync for Eml<Root> {}
 
-impl<Root: Element> Eml<Root> {
+impl<Root: ElementBuilder> Eml<Root> {
     pub fn new<F: 'static + FnOnce(&mut World, Entity)>(body: F) -> Self {
         Eml(Box::new(body), PhantomData)
     }
@@ -111,7 +117,7 @@ impl<Root: Element> Eml<Root> {
     }
 }
 
-impl<Root: Element> Command for Eml<Root> {
+impl<Root: ElementBuilder> Command for Eml<Root> {
     fn apply(self, world: &mut World) {
         let entity = world.spawn_empty().id();
         self.write(world, entity)
@@ -130,7 +136,7 @@ impl<T> NotImplemented<T> {
 #[construct(Empty -> Nothing)]
 pub struct Empty {}
 
-impl Element for Empty {
+impl ElementBuilder for Empty {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         Blueprint::new(Eml::new(move |world, entity| {
             world.entity_mut(entity).push_children(&content);
@@ -150,7 +156,7 @@ impl EmptyDesign {
     }
 
     #[allow(unused_variables)]
-    pub fn push_content<E: Element>(
+    pub fn push_content<E: ElementBuilder>(
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,
@@ -161,8 +167,8 @@ impl EmptyDesign {
     }
 }
 
-pub struct Blueprint<T: Element>(Eml<T>);
-impl<T: Element> Blueprint<T> {
+pub struct Blueprint<T: ElementBuilder>(Eml<T>);
+impl<T: ElementBuilder> Blueprint<T> {
     pub fn new(eml: Eml<T>) -> Self {
         Self(eml)
     }
@@ -230,7 +236,7 @@ pub struct AcceptNoContent;
 
 impl<T> AcceptNoContentDesign<T> {
     #[allow(unused_variables)]
-    pub fn push_content<E: Element>(
+    pub fn push_content<E: ElementBuilder>(
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,

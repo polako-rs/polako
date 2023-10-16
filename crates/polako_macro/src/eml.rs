@@ -67,7 +67,7 @@ impl ParamsExt for Params<Variant> {
             ty: syn::parse2(quote! { #tag })?,
             params: self.clone(),
         };
-        construct.build(&ctx.context)
+        construct.build(&ctx)
     }
 }
 
@@ -629,9 +629,19 @@ impl Parse for EmlRoot {
 }
 
 pub struct EmlContext {
-    context: Context,
-    variables: HashMap<Ident, Variable>,
+    pub context: Context,
+    pub variables: HashMap<Ident, Variable>,
     strict: bool,
+}
+
+impl EmlContext {
+    pub fn new(prefix: &'static str) -> Self {
+        Self {
+            context: Context::new(prefix),
+            variables: HashMap::new(),
+            strict: false
+        }
+    }
 }
 
 impl std::ops::Deref for EmlContext {
@@ -716,7 +726,7 @@ impl EmlRoot {
         Ok(quote! {
             let __root_model__ = #eml::Model::<#tag>::new(__root__);
             #apply_patches;
-            <<#tag as #cst::Construct>::Base as #eml::Element>::build_element(#build_content)
+            <<#tag as #cst::Construct>::Base as #eml::ElementBuilder>::build_element(#build_content)
                 .eml()
                 .write(world, __root__);
             #apply_mixins
@@ -795,7 +805,7 @@ impl EmlNode {
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;
-            <#tag as #eml::Element>::build_element(__content__)
+            <#tag as #eml::ElementBuilder>::build_element(__content__)
                 .eml()
                 .write(world, __model__.entity);
             {
@@ -834,15 +844,17 @@ impl Parse for EmlNode {
     }
 }
 
+#[derive(Clone)]
 pub enum VariableKind {
     Model,
     Resource,
 }
 
+#[derive(Clone)]
 pub struct Variable {
-    ident: Ident,
-    ty: Ident,
-    kind: VariableKind,
+    pub ident: Ident,
+    pub ty: Ident,
+    pub kind: VariableKind,
 }
 
 impl Variable {

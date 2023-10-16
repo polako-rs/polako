@@ -4,7 +4,7 @@ use super::*;
 #[construct(Div -> Empty)]
 pub struct Div {}
 
-impl Element for Div {
+impl ElementBuilder for Div {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Div::Base [[ content ]]
@@ -50,7 +50,7 @@ impl DivDesign {
 #[construct(Label -> TextElement -> Div)]
 pub struct Label;
 
-impl Element for Label {
+impl ElementBuilder for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Label::Base
@@ -61,7 +61,7 @@ impl Element for Label {
 #[derive(Component, Construct)]
 #[construct(Bold -> Label)]
 pub struct Bold {}
-impl Element for Bold {
+impl ElementBuilder for Bold {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Bold::Base + TextElement(.font: "bold")
@@ -122,7 +122,7 @@ fn test_bold_text() {
 #[derive(Component, Construct)]
 #[construct(UiNode -> Div)]
 pub struct UiNode {}
-impl Element for UiNode {
+impl ElementBuilder for UiNode {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! { UiNode::Base + NodeBundle }
     }
@@ -142,7 +142,7 @@ struct TestComponent {
 #[derive(Component, Construct)]
 #[construct(MixPatch -> Div)]
 struct MixPatch;
-impl Element for MixPatch {
+impl ElementBuilder for MixPatch {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             MixPatch::Base + TestComponent(.value: "mix_patch")
@@ -170,7 +170,7 @@ fn test_blueprint_mix_patch() {
 #[derive(Component, Construct)]
 #[construct(MixConstruct -> Div)]
 struct MixConstruct;
-impl Element for MixConstruct {
+impl ElementBuilder for MixConstruct {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             MixConstruct::Base + Name { .value: "mix_construct" }

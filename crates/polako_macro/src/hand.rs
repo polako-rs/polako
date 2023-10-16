@@ -1,9 +1,11 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, collections::{HashMap, HashSet}};
 
 use constructivist::throw;
-use proc_macro2::Ident;
+use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote};
-use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2};
+use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2, braced};
+
+use crate::eml::{EmlContext, Variable, VariableKind};
 
 /// Samples:
 /// ```ignore
@@ -25,7 +27,140 @@ use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2};
 /// )
 /// ```
 #[derive(Clone)]
+pub struct Hand {
+    statements: Vec<Statement>
+}
+
+impl Parse for Hand {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let args;
+        // throw!(input, "parsing hand");
+        parenthesized!(args in input);
+        if !args.is_empty() {
+            throw!(args, "Hand args is not supported yet")
+        }
+        input.parse::<Token![=>]>()?;
+        Ok(Hand { statements: if input.peek(token::Brace) {
+            let stmts;
+            braced!(stmts in input);
+            stmts
+                .parse_terminated(Statement::parse, Token![;])?
+                .into_iter()
+                .collect()
+        } else {
+            vec![
+                input.parse()?
+            ]
+        }})
+    }
+}
+
+impl Hand {
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+        let bevy = ctx.path("bevy");
+        let flow = ctx.path("flow");
+        let mut params = HandParams::new();
+        for statement in self.statements.iter() {
+            statement.fetch_params(ctx, &mut params)?;
+        }
+        let mut sp_decl = quote! {};
+        let mut sp_decs = quote! {};
+        let mut query_idx = 0;
+        let mut res_idx = 0;
+        let mut sp_vars = HashMap::new();
+        for (ident, var) in params.inout.iter().chain(params.output.iter()) {
+            match var.kind {
+                VariableKind::Model => {
+                    let qp = format_ident!("_q{query_idx}");
+                    query_idx += 1;
+                    sp_decl = quote! { #sp_decl #bevy::prelude::Query<&mut _>, };
+                    sp_decs = quote! { #sp_decs #qp, };
+                    sp_vars.insert(ident.clone(), qp);
+                },
+                VariableKind::Resource => {
+                    let rp = format_ident!("_r{res_idx}");
+                    res_idx += 1;
+                    sp_decl = quote! { #sp_decl #bevy::prelude::ResMut<_>, };
+                    sp_decs = quote! { #sp_decs #rp, };
+                    sp_vars.insert(ident.clone(), rp);
+                }
+            }
+        }
+        for (ident, var) in params.input.iter() {
+            match var.kind {
+                VariableKind::Model => {
+                    let qp = format_ident!("_q{query_idx}");
+                    query_idx += 1;
+                    sp_decl = quote! { #sp_decl #bevy::prelude::Query<&_>, };
+                    sp_decs = quote! { #sp_decs #qp, };
+                    sp_vars.insert(ident.clone(), qp);
+                },
+                VariableKind::Resource => {
+                    let rp = format_ident!("_r{res_idx}");
+                    res_idx += 1;
+                    sp_decl = quote! { #sp_decl #bevy::prelude::Res<_>, };
+                    sp_decs = quote! { #sp_decs #rp, };
+                    sp_vars.insert(ident.clone(), rp);
+                }
+            }
+        }
+        let mut body = quote! { };
+        for stmt in self.statements.iter() {
+            let s = stmt.build(ctx, &sp_vars)?;
+            body = quote! { #body #s };
+        }
+
+
+        Ok(quote!{
+            #flow::Hand::new(move |_params: &mut (#sp_decl)| {
+                let (#sp_decs) = _params;
+                #body
+            })
+        })
+    }
+}
+
+pub struct HandParams {
+    inout: HashMap<Ident, Variable>,
+    input: HashMap<Ident, Variable>,
+    output: HashMap<Ident, Variable>,
+}
+impl HandParams {
+    pub fn new() -> Self {
+        HandParams {
+            inout: HashMap::new(),
+            input: HashMap::new(),
+            output: HashMap::new()
+        }
+    }
+    pub fn add_input(&mut self, mark: Ident, var: Variable) {
+        if self.inout.contains_key(&mark) {
+            return;
+        } else if let Some(output) = self.output.remove(&mark) {
+            self.inout.insert(mark, output);
+        } else {
+            self.input.insert(mark, var);
+        }
+    }
+    pub fn add_output(&mut self, mark: Ident, var: Variable) {
+        if self.inout.contains_key(&mark) {
+            return;
+        } else if let Some(input) = self.inout.remove(&mark) {
+            self.inout.insert(mark, input);
+        } else {
+            self.output.insert(mark, var);
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Path(Vec<Ident>);
+
+impl Path {
+    pub fn mark(&self) -> Ident {
+        self.0[0].clone()
+    }
+}
 
 impl<S: AsRef<str>> From<Vec<S>> for Path {
     fn from(value: Vec<S>) -> Self {
@@ -71,6 +206,7 @@ impl Parse for Path {
     }
 }
 
+#[derive(Clone)]
 pub struct Format(LitStr);
 
 impl<S: AsRef<str>> From<S> for Format {
@@ -93,10 +229,78 @@ impl Parse for Format {
     }
 }
 
+#[derive(Clone)]
 pub enum Statement {
     Assign(Path, Expr),
 }
 
+impl Parse for Statement {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let path = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let expr = input.parse()?;
+        Ok(Statement::Assign(path, expr))
+    }
+}
+
+impl Statement {
+    pub fn fetch_params(&self, ctx: &EmlContext, params: &mut HandParams) -> syn::Result<()> {
+        match self {
+            Statement::Assign(path, expr) => {
+                let mark = path.mark();
+                let Some(output) = ctx.variables.get(&mark) else {
+                    throw!(mark, "Undefined output mark '{}'", mark.to_string());
+                };
+                params.add_output(mark, output.clone());
+                expr.fetch_params(ctx, params)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
+        let cst = ctx.constructivism();
+        Ok(match self {
+            Statement::Assign(path, expr) => {
+                let mark = path.mark();
+                let host = params.get(&mark).expect("No variable in params");
+                let ty = &ctx.variables.get(&mark).expect("No variable in variables").ty;
+                let value = expr.build(ctx, params)?;
+                let last = path.0.len() - 2;
+                let mut get = quote! { <<#ty as #cst::Construct>::Props<#cst::Lookup> as #cst::Singleton>::instance().getters() };
+                let mut set = quote! { <<#ty as #cst::Construct>::Props<#cst::Lookup> as #cst::Singleton>::instance().setters() };
+                for (idx, part) in path.0.iter().skip(1).enumerate() {
+                    let setter = format_ident!("set_{}", part);
+                    if idx == 0 {
+                        get = quote! { #get.#part(&_host) };
+                    } else {
+                        get = quote! { #get.#part() };
+                    }
+
+                    if idx == 0 && idx == last {
+                        set = quote! { #set.#setter(_host.as_mut(), _value) };
+                    } else if idx == last {
+                        set = quote! { #set.#setter(_value)};
+                    } else if idx == 0 {
+                        set = quote! { #set.#part(_host.as_mut()) };
+                    } else {
+                        set = quote! { #set.#part() };
+                    }
+                }
+                quote! {{
+                    let _value = (#value).into();
+                    let mut _host = #host.get_mut(#mark.entity).unwrap();
+                    if #get.into_value().as_ref() != &_value {
+                        #set
+                    }
+                }}
+            }
+            
+        })
+    }
+}
+
+#[derive(Clone)]
 pub enum Expr {
     Const(Lit),
     Format(Box<Expr>, Format),
@@ -190,6 +394,78 @@ impl Expr {
             }
         }
         flat.pop().unwrap().1
+    }
+
+    pub fn fetch_params(&self, ctx: &EmlContext, params: &mut HandParams) -> syn::Result<()> {
+        match self {
+            Expr::Read(path) => {
+                let mark = path.mark();
+                let Some(input) = ctx.variables.get(&mark) else {
+                    throw!(mark, "Undefined input mark '{}'", mark.to_string());
+                };
+                params.add_input(mark, input.clone());
+                Ok(())
+            },
+            Expr::Format(expr, _) => expr.fetch_params(ctx, params),
+            Expr::Const(_) => Ok(()),
+            Expr::Add(left, right) |
+            Expr::Sub(left, right) |
+            Expr::Mul(left, right) |
+            Expr::Div(left, right) => {
+                left.fetch_params(ctx, params)?;
+                right.fetch_params(ctx, params)?;
+                Ok(())
+            },
+        }
+    }
+
+    pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
+        let cst = ctx.constructivism();
+        let bevy = ctx.path("bevy");
+        Ok(match self {
+            Expr::Const(lit) => quote! { #lit },
+            Expr::Format(expr, Format(lit)) => {
+                let expr = expr.build(ctx, params)?;
+                quote! { format!(#lit, #expr) }
+            },
+            Expr::Add(left, right) => {
+                let left = left.build(ctx, params)?;
+                let right = right.build(ctx, params)?;
+                quote! { #left + #right }
+            },
+            Expr::Sub(left, right) => {
+                let left = left.build(ctx, params)?;
+                let right = right.build(ctx, params)?;
+                quote! { #left - #right }
+            },
+            Expr::Mul(left, right) => {
+                let left = left.build(ctx, params)?;
+                let right = right.build(ctx, params)?;
+                quote! { #left * #right }
+            },
+            Expr::Div(left, right) => {
+                let left = left.build(ctx, params)?;
+                let right = right.build(ctx, params)?;
+                quote! { #left / #right }
+            },
+            Expr::Read(path) => {
+                let mark = path.mark();
+                let ty = &ctx.variables.get(&mark).expect("Missing input var").ty;
+                let host = params.get(&mark).expect("Missing input param");
+                let mut resolve = quote! { };
+                for (idx, part) in path.0.iter().skip(1).enumerate() {
+                    if idx == 0 {
+                        resolve = quote! { #resolve.#part(#host.get(#mark.entity).unwrap()) };
+                    } else {
+                        resolve = quote! { #resolve.#part() };
+                    }
+                }
+                quote! {
+                    <<#ty as #cst::Construct>::Props<#cst::Get> as #cst::Singleton>::instance()#resolve.into_value().get()
+                }
+            }
+        })
+
     }
 }
 

@@ -1,13 +1,12 @@
 use bevy::{
-    ecs::{query::WorldQuery, world::EntityMut},
+    ecs::query::WorldQuery,
     prelude::*,
     render::camera::RenderTarget,
     time::Time,
     ui::{CalculatedClip, Node, UiStack},
     window::{PrimaryWindow, Window, WindowRef},
 };
-use polako_constructivism::{Construct, Singleton};
-use polako_core::*;
+use polako_constructivism::Construct;
 
 #[derive(Construct, Default, Clone)]
 pub struct PointerInputPosition {
@@ -38,9 +37,9 @@ fn t(e: impl Event) {
 }
 #[derive(Event)]
 pub struct PointerInput {
-    entity: Entity,
-    position: PointerInputPosition,
-    data: PointerInputData,
+    pub entity: Entity,
+    pub position: PointerInputPosition,
+    pub data: PointerInputData,
 }
 
 impl PointerInput {
@@ -88,45 +87,7 @@ impl PointerInput {
     }
 }
 
-macro_rules! impl_signal {
-    ($variant:ident, $name:ident, $marker:ident) => {
-        pub struct $name;
-        impl Signal for $name {
-            type Event = PointerInput;
-            type Args = PointerInputPosition;
-            type Marker = $marker;
-            fn filter(event: &Self::Event) -> Option<Entity> {
-                matches!(event.data, PointerInputData::$variant).then_some(event.entity)
-            }
-        }
-        pub struct $marker;
-        impl Singleton for $marker {
-            fn instance() -> &'static $marker {
-                &$marker
-            }
-        }
-        impl $marker {
-            pub fn emit(&self, world: &mut World, entity: Entity, position: <$name as Signal>::Args) {
-                world
-                    .get_resource_or_insert_with(Events::<PointerInput>::default)
-                    .send(PointerInput {
-                        entity,
-                        position,
-                        data: PointerInputData::$variant,
-                    })
-            }
-        }
-    };
-}
 
-impl_signal!(Up, UpSignal, UpSignalMarker);
-impl_signal!(Down, DownSignal, DownSignalMarker);
-impl_signal!(Motion, MotionSignal, MotionSignalMarker);
-impl_signal!(DragStart, DragStSignal, DragStartSignalMarker);
-impl_signal!(Drag, DragSignal, DragSignalMarker);
-impl_signal!(DragStop, DragStopSignal, DragStopSignalMarker);
-impl_signal!(Hover, HoverSignal, HoverSignalMarker);
-impl_signal!(Focus, FocusSignal, FocusSignalMarker);
 
 #[derive(Default)]
 pub enum PointerFilter {

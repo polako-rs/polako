@@ -4,7 +4,7 @@ use eml::Eml;
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
-implement_constructivism_macro!("polako", variant::Variant);
+implement_constructivism_macro!("polako", variant::Variant, eml::EmlContext);
 
 mod derive;
 mod eml;

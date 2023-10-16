@@ -27,4 +27,5 @@ polako_constructivism = { path = "crates/polako_constructivism" }
 polako_eml = { path = "crates/polako_eml" }
 polako_flow = { path = "crates/polako_flow" }
 polako_macro = { path = "crates/polako_macro" }
+polako_input = { path = "crates/polako_input" }
 

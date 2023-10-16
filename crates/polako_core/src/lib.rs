@@ -4,7 +4,7 @@ use polako_constructivism::{Construct, Lookup, Singleton};
 
 pub trait Signal {
     type Event: Event;
-    type Marker: Singleton;
+    type Descriptor: Singleton;
     type Args: Construct;
     fn filter(event: &Self::Event) -> Option<Entity>;
     // fn emit(world: &mut World, entity: Entity, args: Self::Args);

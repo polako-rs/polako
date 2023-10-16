@@ -2582,6 +2582,7 @@ dependencies = [
  "polako_constructivism",
  "polako_eml",
  "polako_flow",
+ "polako_input",
  "polako_macro",
 ]
 
@@ -2618,6 +2619,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "polako_constructivism",
+ "polako_input",
 ]
 
 [[package]]

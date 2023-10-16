@@ -3,6 +3,8 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, format_ident};
 use syn::{DeriveInput, Type, spanned::Spanned, parse_quote, Field, Data};
 
+use crate::eml::EmlContext;
+
 pub struct DeriveConstraint {
     pub ident: Ident,
     pub segment: DeriveSegment,
@@ -16,7 +18,7 @@ impl DeriveConstraint {
         })
     }
 
-    pub fn build(&self, ctx: &Context) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
         let segment = self.segment.build(ctx)?;
         let ident = &self.ident;
         let eml = ctx.path("eml");
@@ -34,7 +36,7 @@ impl DeriveConstraint {
 
     pub fn build_from_derive(input: DeriveInput) -> syn::Result<TokenStream> {
         let input = Self::from_derive(input)?;
-        let ctx = Context::new("polako");
+        let ctx = EmlContext::new("polako");
         input.build(&ctx)
     }
 }
@@ -51,7 +53,7 @@ impl DeriveBehaviour {
             segment: DeriveSegment::from_derive(input)?,
         })
     }
-    pub fn build(&self, ctx: &Context) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
         let segment = self.segment.build(ctx)?;
         let ident = &self.ident;
         let eml = ctx.path("eml");
@@ -70,14 +72,14 @@ impl DeriveBehaviour {
     }
     pub fn build_from_derive(input: DeriveInput) -> syn::Result<TokenStream> {
         let input = Self::from_derive(input)?;
-        let ctx = Context::new("polako");
+        let ctx = EmlContext::new("polako");
         input.build(&ctx)
     }
 }
 
 
 pub struct DeriveSignal {
-    ty: Type,
+    ident: Ident,
     args: Option<(DeriveConstruct, Vec<Field>)>,
 }
 
@@ -101,25 +103,78 @@ impl DeriveSignal {
         input.props.retain(|p| &p.ident.to_string() != "entity");
         input.params.retain(|p| &p.name.to_string() != "entity");
         let ty = input.ty.clone();
-        let signal_args = format_ident!("{}SignalArgs", ident);
-        input.ty = parse_quote!(quote!{ #signal_args });
         let args = if input.props.is_empty() {
             None
         } else {
             Some((input, fields))
         };
-        Ok(DeriveSignal { ty, args })
+        Ok(DeriveSignal { ident, args })
     }
 
-    // fn build(&self, ctx: &Context) -> syn::Result<TokenStream> {
-    //     let mut out = quote! { };
-    //     let args_ty = if let Some(args) = &self.args {
-            
-    //         let argsy_ty = args.ty;
-    //         quote! { #args_ty }
-    //     } else {
-    //         quote!{ () }
-    //     }
+    fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+        let cst = ctx.constructivism();
+        let flow = ctx.path("flow");
+        let bevy = ctx.path("bevy");
+        let ident = &self.ident;
+        let descriptor = format_ident!("{}SignalDescriptor", ident);
+        let mut out = quote! { };
+        let (args_ty, args_body) = if let Some((args, fields)) = &self.args {
+            let args_ty = &args.ty;
+            let mut body = quote! { };
+            for field in fields.iter() {
+                let Some(ident) = &field.ident else {
+                    throw!(field, "Only named fields supported");
+                };
+                body = quote! { #body #ident = args.#ident, };
+            }
+            (
+                quote! { #args_ty },
+                body,
+            )
+        } else {
+            (
+                quote!{ () },
+                quote! { },
+            )
+        };
+        Ok(quote! {
+            impl #flow::Signal for #ident {
+                type Event = Self;
+                type Args = #args_ty;
+                type Descriptor = #descriptor;
+                fn filter(event: &Self::Event) -> Option<#bevy::prelude::Entity> {
+                    Some(event.entity)
+                }
+            }
+            pub struct #descriptor;
+            impl  #cst::Singleton for #descriptor {
+                fn instance() -> &'static Self {
+                    &#descriptor
+                }
+            }
+            impl #descriptor {
+                pub fn emit(
+                    &self,
+                    world: &mut #bevy::World,
+                    entity: #bevy::prelude::Entity,
+                    args: <$name as #flow::Signal>::Args
+                ) {
+                    let event = Self {
+                        entity,
+                        #args_body
+                    };
+                    world.resource_mut::<#bevy::prelude::Events<Self::Event>>().send(event);
+                }
 
-    // }
+                pub fn assign<'w, S: #bevy::ecs::SystemParam>(
+                    &self,
+                    entity: #bevy::ecs::world::EntityMut<'w>,
+                    value: Hand<#ident, #flow::Handler<S>>,
+                ) {
+                    
+                }
+            }
+        })
+
+    }
 }

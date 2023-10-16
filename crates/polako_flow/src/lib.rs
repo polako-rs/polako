@@ -3,11 +3,13 @@ use std::{
 };
 
 use bevy::{
-    ecs::system::{Command, SystemBuffer},
+    ecs::system::{Command, SystemBuffer, SystemParam},
     prelude::*,
     utils::{HashMap, HashSet},
 };
 use polako_constructivism::*;
+
+pub mod input;
 
 pub struct FlowPlugin;
 impl Plugin for FlowPlugin {
@@ -445,7 +447,7 @@ impl<T: Send + Sync + Clone + PartialEq + std::fmt::Debug + 'static> Bindable fo
 
 type Changes<'w, T, V> = Res<'w, Channel<ApplyChange<T, V>>>;
 #[derive(Resource)]
-struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
+pub struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
 unsafe impl<T> Send for Channel<T> {}
 unsafe impl<T> Sync for Channel<T> {}
 impl<T> Channel<T> {
@@ -676,5 +678,50 @@ impl<H: 'static, V: Bindable> MapProp<H, V> for Prop<H, V> {
             let val = self.get(host);
             Value::Val(map(val.as_ref()))
         }))
+    }
+}
+
+
+pub trait Signal: Send + Sync + Sized + 'static {
+    type Event: Event;
+    type Descriptor: Singleton;
+    type Args: Construct;
+    fn filter(event: &Self::Event) -> Option<Entity>;
+    // fn emit(world: &mut World, entity: Entity, args: Self::Args);
+    // fn props(&self) -> &'static <Self::Args as Construct>::Props<Lookup> {
+    //     <<Self::Args as Construct>::Props<Lookup> as Singleton>::instance()
+    // }
+    // fn params(&self) -> &'static <Self::Args as Construct>::Params {
+    //     <<Self::Args as Construct>::Params as Singleton>::instance()
+    // }
+}
+
+pub struct Handler<S: SystemParam + 'static>(Box<dyn Fn(&mut S)>);
+
+#[derive(Component)]
+pub struct Hands<E: Signal, S: SystemParam + 'static>(Vec<Hand<E, S>>);
+unsafe impl<E: Signal, S: SystemParam> Send for Hands<E, S> { }
+unsafe impl<E: Signal, S: SystemParam> Sync for Hands<E, S> { }
+pub struct Hand<E: Signal, S: SystemParam + 'static> {
+    marker: PhantomData<E>,
+    func: Handler<S>
+}
+
+impl<E: Signal, S: SystemParam> Hand<E, S> {
+    pub fn new<F: Fn(&mut S) + 'static>(func: F) -> Self {
+        Self {
+            func: Handler(Box::new(func)),
+            marker: PhantomData,
+        }
+    }
+}
+
+fn hands_system<E: Signal, S: SystemParam + 'static>(
+    mut reader: EventReader<E::Event>,
+    hands_query: Query<&Hands<E, S>>,
+    mut params: S,
+) {
+    for hands in hands_query.iter_many(reader.iter().filter_map(|e| E::filter(e))) {
+        hands.0.iter().for_each(|h| (h.func.0)(&mut params));
     }
 }
