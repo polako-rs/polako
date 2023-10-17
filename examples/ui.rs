@@ -20,84 +20,6 @@ fn main() {
         .run();
 }
 
-
-fn test_infer(world: &mut World) {
-    let entity = world.spawn_empty().id();
-    let system = move |items: Query<&_>| {
-        let item = items.get(entity).unwrap();
-        let data = prop!(Label.text).get(item).as_ref().clone();
-        info!("data: {data}");
-    };
-    // system.run((), world);
-
-    world.schedule_scope(Update, move |w, s| {
-        let mut system = IntoSystem::into_system(system);
-        system.initialize(w);
-        s.add_systems(system);
-    });
-
-}
-
-pub trait GetRefComponent<T: Component> {
-    fn get_c(&self, entity: Entity) -> &T;
-}
-
-
-impl<'w, 's, T: Component> GetRefComponent<T> for Query<'w, 's, &T, ()> {
-    fn get_c(&self, entity: Entity) -> &T {
-        self.get(entity).unwrap()
-    }
-}
-
-pub trait GetMutComponent<T: Component> {
-    fn get_c<'a>(&'a mut self, entity: Entity) -> &'a mut T;
-}
-
-impl<'w, 's, T: Component> GetMutComponent<T> for Query<'w, 's, &mut T, ()> {
-    fn get_c<'a>(&'a mut self, entity: Entity) -> &'a mut T{
-        self.get_mut(entity).unwrap().into_inner()
-    }
-}
-
-
-fn takes_mut(q: Query<&mut UiText>) {
-
-}
-
-fn takes_mut_item(item: &mut UiText) {
-    
-}
-
-// impl div_construct::Props<Get> {
-//     pub fn press(&self) { }
-// }
-
-fn test_infer_mutability(world: &mut World) {
-    let entity = world.spawn_empty().id();
-    let system = move |mut items: Query<_>| {
-        // let item = items.get(entity).unwrap();
-        // let c = items.get_c(entity);
-        takes_mut(items)
-        // <<Label as Construct>::Props<Lookup> as Singleton>::instance().setters().text(items.get_c(entity), "hello".to_string());
-        // items.get_component(entity), |c| {
-        //     let 
-        //     <<Label as Construct>::Props<Lookup> as Singleton>::instance().setters().text(c, "hello".to_string());
-        // })
-        // let data = <<Label as Construct>::Props as Singleton>::instance().setters().text(this__, value__)
-        //  prop!(Label.text).get(item).as_ref().clone();
-        // info!("data: {data}");
-    };
-    // system.run((), world);
-
-    // world.schedule_scope(Update, move |w, s| {
-    //     let mut system = IntoSystem::into_system(system);
-    //     system.initialize(w);
-    //     s.add_systems(system);
-    // });
-
-
-
-}
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(
@@ -226,7 +148,7 @@ fn hello_world(mut commands: Commands) {
     )
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Div -> Empty)]
 pub struct Div {
     #[prop(construct)]
@@ -251,7 +173,7 @@ pub struct UiText {
     pub text_color: Color,
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Label -> UiText -> Div)]
 pub struct Label;
 impl ElementBuilder for Label {
@@ -262,7 +184,7 @@ impl ElementBuilder for Label {
     }
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Body -> Div)]
 pub struct Body;
 impl ElementBuilder for Body {
@@ -281,7 +203,7 @@ impl ElementBuilder for Body {
     }
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Column -> Div)]
 pub struct Column;
 impl ElementBuilder for Column {
@@ -300,7 +222,7 @@ impl ElementBuilder for Column {
     }
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Row -> Div)]
 pub struct Row;
 impl ElementBuilder for Row {
@@ -320,10 +242,7 @@ impl ElementBuilder for Row {
 }
 
 use bevy::ecs::world::EntityMut;
-use polako_constructivism::Construct;
-use polako_constructivism::Get;
 use polako_constructivism::Is;
-use polako_constructivism::Lookup;
 use polako_constructivism::Singleton;
 impl DivDesign {
     // Div can accept string literals as content
@@ -338,7 +257,7 @@ impl DivDesign {
         Implemented
     }
     // Only Div and elements based on Div can be content of the Div
-    pub fn push_content<E: ElementBuilder + Is<Div>>(
+    pub fn push_content<E: Element + Is<Div>>(
         &self,
         _: &mut World,
         content: &mut Vec<Entity>,

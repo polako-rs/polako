@@ -1,6 +1,13 @@
+use bevy::ecs::component::TableStorage;
+
 use super::*;
 
-#[derive(Component, Construct)]
+pub struct XXX;
+impl Component for XXX {
+    type Storage = TableStorage;
+}
+
+#[derive(Element)]
 #[construct(Div -> Empty)]
 pub struct Div {}
 
@@ -46,7 +53,7 @@ impl DivDesign {
     }
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Label -> TextElement -> Div)]
 pub struct Label;
 
@@ -58,7 +65,7 @@ impl ElementBuilder for Label {
     }
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(Bold -> Label)]
 pub struct Bold {}
 impl ElementBuilder for Bold {
@@ -119,7 +126,7 @@ fn test_bold_text() {
     assert_eq!("bold", &world.query::<&TextElement>().single(world).font);
 }
 
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(UiNode -> Div)]
 pub struct UiNode {}
 impl ElementBuilder for UiNode {
@@ -139,9 +146,9 @@ fn test_blueprint_patch_self() {
 struct TestComponent {
     value: String,
 }
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(MixPatch -> Div)]
-struct MixPatch;
+pub struct MixPatch;
 impl ElementBuilder for MixPatch {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
@@ -167,9 +174,9 @@ fn test_blueprint_mix_patch() {
         &world.query::<&TestComponent>().single(world).value
     );
 }
-#[derive(Component, Construct)]
+#[derive(Element)]
 #[construct(MixConstruct -> Div)]
-struct MixConstruct;
+pub struct MixConstruct;
 impl ElementBuilder for MixConstruct {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {

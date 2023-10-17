@@ -5,10 +5,10 @@ use bevy::{
         system::{Command, CommandQueue},
         world::EntityMut,
     },
-    prelude::*, input::{mouse::MouseButtonInput, ButtonState},
+    prelude::*,
 };
 use polako_constructivism::{traits::Construct, *};
-use polako_core::Signal;
+use polako_flow::ChangedEntities;
 
 #[cfg(test)]
 mod tests;
@@ -19,8 +19,10 @@ pub mod msg {
 }
 
 pub trait Element: ElementBuilder {
-    type Signals: Singleton;
+    // type Signals: Singleton;
 }
+
+
 
 
 
@@ -70,23 +72,42 @@ pub trait Behaviour: Segment + Component {}
 /// tree is built. Like `AcceptOnly<T>` in `#[construct(TabView -> AcceptOnly<Tab> -> Div)]
 pub trait Constraint: Segment + IntoBundle {}
 
-pub struct Model<C: ElementBuilder> {
-    pub entity: Entity,
-    marker: PhantomData<C>,
+
+pub trait PolakoType: TypeReference {
+
 }
 
-impl<C: ElementBuilder> Model<C> {
+impl<T: TypeReference> PolakoType for T {
+
+}
+
+pub struct Model<E: Element> {
+    pub entity: Entity,
+    marker: PhantomData<E>,
+}
+
+impl<E: Element> Model<E> {
     pub fn new(entity: Entity) -> Self {
         Model {
             entity,
             marker: PhantomData,
         }
     }
+    pub fn getters(&self) -> &'static E::Props<Get> {
+        <<E as Construct>::Props<Get> as Singleton>::instance()
+    }
+    pub fn setters(&self) -> &'static E::Props<Set> {
+        <<E as Construct>::Props<Set> as Singleton>::instance()
+    }
+    pub fn descriptor(&self) -> &'static E::Props<Describe> {
+        <<E as Construct>::Props<Describe> as Singleton>::instance()
+    }
 }
 
-impl<C: ElementBuilder> Copy for Model<C> {}
+impl<E: Element> Copy for Model<E> {}
 
-impl<C: ElementBuilder> std::fmt::Debug for Model<C> {
+
+impl<E: Element> std::fmt::Debug for Model<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Model")
             .field("entity", &self.entity)
@@ -94,12 +115,19 @@ impl<C: ElementBuilder> std::fmt::Debug for Model<C> {
     }
 }
 
-impl<C: ElementBuilder> Clone for Model<C> {
+impl<E: Element> Clone for Model<E> {
     fn clone(&self) -> Self {
         Self {
             entity: self.entity,
             marker: PhantomData,
         }
+    }
+}
+
+pub struct NotifyChanged<E: Element>(Model<E>);
+impl<E: Element> Command for NotifyChanged<E> {
+    fn apply(self, world: &mut World) {
+        world.resource_mut::<ChangedEntities<E>>().add(self.0.entity);
     }
 }
 
@@ -156,7 +184,7 @@ impl EmptyDesign {
     }
 
     #[allow(unused_variables)]
-    pub fn push_content<E: ElementBuilder>(
+    pub fn push_content<E: Element>(
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,
@@ -236,7 +264,7 @@ pub struct AcceptNoContent;
 
 impl<T> AcceptNoContentDesign<T> {
     #[allow(unused_variables)]
-    pub fn push_content<E: ElementBuilder>(
+    pub fn push_content<E: Element>(
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,

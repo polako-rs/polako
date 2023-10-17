@@ -1,7 +1,7 @@
-use constructivist::{prelude::*, throw, derive::Props};
+use constructivist::{prelude::*, throw};
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, format_ident};
-use syn::{DeriveInput, Type, spanned::Spanned, parse_quote, Field, Data};
+use syn::{DeriveInput, spanned::Spanned, Field, Data};
 
 use crate::eml::EmlContext;
 
@@ -77,13 +77,44 @@ impl DeriveBehaviour {
     }
 }
 
+pub struct DeriveElement {
+    ident: Ident,
+    construct: DeriveConstruct,
+}
+
+impl DeriveElement {
+    pub fn from_derive(input: DeriveInput) -> syn::Result<Self> {
+        Ok(Self {
+            ident: input.ident.clone(),
+            construct: DeriveConstruct::from_derive(input)?
+        })
+    }
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+        let construct = self.construct.build(&ctx.context)?;
+        let ident = &self.ident;
+        let eml = ctx.path("eml");
+        Ok(quote! {
+            #construct
+            impl ::bevy::ecs::component::Component for #ident {
+                type Storage = ::bevy::ecs::component::TableStorage;
+            }
+            impl #eml::Element for #ident {
+
+            }
+        })
+    }
+    pub fn build_from_derive(input: DeriveInput) -> syn::Result<TokenStream> {
+        let input = Self::from_derive(input)?;
+        let ctx = EmlContext::new("polako");
+        input.build(&ctx)
+    }
+}
+
 
 pub struct DeriveSignal {
     ident: Ident,
     args: Option<(DeriveConstruct, Vec<Field>)>,
 }
-
-
 
 impl DeriveSignal {
     pub fn from_derive(input: DeriveInput) -> syn::Result<Self> {
@@ -102,7 +133,6 @@ impl DeriveSignal {
         }
         input.props.retain(|p| &p.ident.to_string() != "entity");
         input.params.retain(|p| &p.name.to_string() != "entity");
-        let ty = input.ty.clone();
         let args = if input.props.is_empty() {
             None
         } else {
@@ -111,13 +141,12 @@ impl DeriveSignal {
         Ok(DeriveSignal { ident, args })
     }
 
-    fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
         let cst = ctx.constructivism();
         let flow = ctx.path("flow");
         let bevy = ctx.path("bevy");
         let ident = &self.ident;
         let descriptor = format_ident!("{}SignalDescriptor", ident);
-        let mut out = quote! { };
         let (args_ty, args_body) = if let Some((args, fields)) = &self.args {
             let args_ty = &args.ty;
             let mut body = quote! { };
@@ -176,5 +205,11 @@ impl DeriveSignal {
             }
         })
 
+    }
+
+    pub fn build_from_derive(input: DeriveInput) -> syn::Result<TokenStream> {
+        let input = Self::from_derive(input)?;
+        let ctx = EmlContext::new("polako");
+        input.build(&ctx)
     }
 }

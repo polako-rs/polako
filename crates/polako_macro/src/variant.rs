@@ -1,4 +1,4 @@
-use constructivist::{prelude::Context, proc::{Value, ContextLike}, throw};
+use constructivist::{proc::{Value, ContextLike}, throw};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{
@@ -9,7 +9,7 @@ use syn::{
     Expr, Ident, Token,
 };
 
-use crate::{hand::{Statement, Hand}, eml::EmlContext};
+use crate::{hand::Hand, eml::EmlContext};
 
 #[derive(Clone)]
 pub enum Variant {
@@ -109,7 +109,7 @@ impl Color {
                 ((self.value & 0x000f) >> 00) as f32 / 15.,
             )),
 
-            // rrggbb, alpha = 1.0
+            // RR/GG/BB, alpha = 1.0
             6 => Ok((
                 ((self.value & 0x00ff0000) >> 16) as f32 / 255.,
                 ((self.value & 0x0000ff00) >> 08) as f32 / 255.,

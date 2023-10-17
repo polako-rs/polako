@@ -1,5 +1,5 @@
-use bevy::prelude::{Event, Entity, World, Events};
-use polako_constructivism::{Construct, Lookup, Singleton};
+use bevy::prelude::{Event, Entity};
+use polako_constructivism::{Construct, Singleton};
 
 
 pub trait Signal {
@@ -29,8 +29,4 @@ pub struct PressedSignalMarker;
 
 impl Sig for Pressed {
     type Marker = PressedSignalMarker;
-}
-
-pub struct Fields {
-    pressed: <Pressed as Sig>::Marker,
 }

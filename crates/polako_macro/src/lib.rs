@@ -1,5 +1,5 @@
 use constructivist::prelude::*;
-use derive::{DeriveBehaviour, DeriveConstraint};
+use derive::{DeriveBehaviour, DeriveConstraint, DeriveElement, DeriveSignal};
 use eml::Eml;
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
@@ -45,6 +45,24 @@ pub fn constraint_derive(input: TokenStream) -> TokenStream {
 pub fn behaviour_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(match DeriveBehaviour::build_from_derive(input) {
+        Ok(stream) => stream,
+        Err(e) => e.to_compile_error(),
+    })
+}
+
+#[proc_macro_derive(Element, attributes(construct, param, prop))]
+pub fn element_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    TokenStream::from(match DeriveElement::build_from_derive(input) {
+        Ok(stream) => stream,
+        Err(e) => e.to_compile_error(),
+    })
+}
+
+#[proc_macro_derive(Signal, attributes(construct, param, prop))]
+pub fn signal_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    TokenStream::from(match DeriveSignal::build_from_derive(input) {
         Ok(stream) => stream,
         Err(e) => e.to_compile_error(),
     })

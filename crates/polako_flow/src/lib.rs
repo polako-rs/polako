@@ -164,16 +164,12 @@ fn write_component_changes<T: Component, V: Bindable>(
 fn populate_changes<T: Component>(
     changes: Res<Channel<ChangedEntity<T>>>,
     mut changed_entities: ResMut<ChangedEntities<T>>,
-    mut populated: Local<HashSet<Entity>>,
     mut flow: Deferred<FlowLoopControl>,
 ) {
-    populated.clear();
     changed_entities.entities.clear();
     changes.recv(|change| {
         flow.repeat();
-        if populated.insert(change.entity) {
-            changed_entities.entities.push(change.entity)
-        }
+        changed_entities.entities.insert(change.entity);
     })
 }
 
@@ -487,16 +483,20 @@ impl<T> Channel<T> {
 }
 
 #[derive(Resource)]
-struct ChangedEntities<C: Component> {
-    entities: Vec<Entity>,
+pub struct ChangedEntities<C: Component> {
+    entities: HashSet<Entity>,
     marker: PhantomData<C>,
 }
 impl<C: Component> ChangedEntities<C> {
     fn new() -> Self {
         Self {
-            entities: vec![],
+            entities: HashSet::new(),
             marker: PhantomData,
         }
+    }
+
+    pub fn add(&mut self, entity: Entity) {
+        self.entities.insert(entity);
     }
 }
 

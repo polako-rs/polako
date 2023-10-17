@@ -1,7 +1,7 @@
-use std::{fmt::Debug, collections::{HashMap, HashSet}};
+use std::{fmt::Debug, collections::HashMap};
 
 use constructivist::throw;
-use proc_macro2::{Ident, TokenStream, TokenTree};
+use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2, braced};
 
@@ -259,16 +259,14 @@ impl Statement {
     }
 
     pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
-        let cst = ctx.constructivism();
         Ok(match self {
             Statement::Assign(path, expr) => {
                 let mark = path.mark();
                 let host = params.get(&mark).expect("No variable in params");
-                let ty = &ctx.variables.get(&mark).expect("No variable in variables").ty;
                 let value = expr.build(ctx, params)?;
                 let last = path.0.len() - 2;
-                let mut get = quote! { <<#ty as #cst::Construct>::Props<#cst::Lookup> as #cst::Singleton>::instance().getters() };
-                let mut set = quote! { <<#ty as #cst::Construct>::Props<#cst::Lookup> as #cst::Singleton>::instance().setters() };
+                let mut get = quote! { #mark.getters() };
+                let mut set = quote! { #mark.setters() };
                 for (idx, part) in path.0.iter().skip(1).enumerate() {
                     let setter = format_ident!("set_{}", part);
                     if idx == 0 {
@@ -420,8 +418,6 @@ impl Expr {
     }
 
     pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
-        let cst = ctx.constructivism();
-        let bevy = ctx.path("bevy");
         Ok(match self {
             Expr::Const(lit) => quote! { #lit },
             Expr::Format(expr, Format(lit)) => {
@@ -450,7 +446,6 @@ impl Expr {
             },
             Expr::Read(path) => {
                 let mark = path.mark();
-                let ty = &ctx.variables.get(&mark).expect("Missing input var").ty;
                 let host = params.get(&mark).expect("Missing input param");
                 let mut resolve = quote! { };
                 for (idx, part) in path.0.iter().skip(1).enumerate() {
@@ -461,7 +456,7 @@ impl Expr {
                     }
                 }
                 quote! {
-                    <<#ty as #cst::Construct>::Props<#cst::Get> as #cst::Singleton>::instance()#resolve.into_value().get()
+                    #mark.getters()#resolve.into_value().get()
                 }
             }
         })
@@ -509,7 +504,6 @@ impl From<&'static str> for Box<Expr> {
 impl Parse for Expr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut step = None;
-        let span = input.fork();
         loop {
             if input.is_empty() || input.peek(Token![;]) {
                 break;

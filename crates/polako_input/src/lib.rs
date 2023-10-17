@@ -32,9 +32,6 @@ pub enum PointerInputData {
     Focus,
 }
 
-fn t(e: impl Event) {
-    
-}
 #[derive(Event)]
 pub struct PointerInput {
     pub entity: Entity,

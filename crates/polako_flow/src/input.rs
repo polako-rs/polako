@@ -3,7 +3,7 @@ use polako_input::{PointerInput, PointerInputData, PointerInputPosition};
 use bevy::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::world::EntityMut;
-use super::{Signal, Hand, Handler};
+use super::{Signal, Hand};
 macro_rules! impl_signal {
     ($variant:ident, $name:ident, $marker:ident) => {
         pub struct $name;
@@ -34,8 +34,8 @@ macro_rules! impl_signal {
 
             pub fn assign<'w, S: SystemParam>(
                 &self,
-                entity: EntityMut<'w>,
-                value: Hand<$name, S>,
+                _entity: EntityMut<'w>,
+                _value: Hand<$name, S>,
             ) {
                 
             }
