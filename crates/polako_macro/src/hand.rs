@@ -112,8 +112,8 @@ impl Hand {
 
 
         Ok(quote!{
-            #flow::Hand::new(move |_params: &mut (#sp_decl)| {
-                let (#sp_decs) = _params;
+            #flow::Hand::new(move |_params: &mut ::bevy::ecs::system::StaticSystemParam<(#sp_decl)>| {
+                let (#sp_decs) = ::std::ops::DerefMut::deref_mut(_params);
                 #body
             })
         })

@@ -1,6 +1,13 @@
+use std::ops::DerefMut;
+
 use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
+
+#[derive(Signal)]
+pub struct Pressed {
+    entity: Entity
+}
 
 fn main() {
     App::new()
@@ -26,126 +33,39 @@ fn hello_world(mut commands: Commands) {
         eml! {
             Body [
                 Div {
-                    .on.hover: () => {
-                        label.text = source.text.fmt("{}, world!")
+                    // .on.hover: () => {
+                    //     label.text = source.text.fmt("{}, world!")
+                    // },
+                    .on.enter: () =>{
+                        label.text = "Hello, ";
                     },
                     .bg: #2d2d2d,
                 },
-                source: Label { .text: "Hello, "},
-                label: Label,
-                "world",
+                label: Label { .text: "..., "},
+                "world!",
             ]
-            // resource(time, Time);
-            // bind(time.elapsed_seconds.fmt("{:0.2}") => elapsed.text);
-            // bind(time.elapsed_seconds * 0.5 - 0.5 => content.bg.r);
-            // bind(content.bg.hex => color.text);
-            // Body + Name { .value: "body" } [
-            //     content: Column { .bg: #9d9d9d, .s.padding: [25, 50] }[
-            //         Div { .bg: #dedede, .s.padding: 50 } [
-            //             "Hello world!"
-            //         ],
-            //         Row [
-            //             "Elapsed: ", elapsed: Label { .text: "0.00" }
-            //         ],
-            //         Row [
-            //             "Color: ", color: Label
-            //         ]
-            //     ]
-            // ]
         }
+    );
 
-        // Recursive expansion of eml! macro
-// ==================================
 
-// ::polako::eml::Eml:: <Body> ::new(move|world: &mut::bevy::prelude::World,__root__: ::bevy::prelude::Entity|{
-//     let __this__ = __root__;
-//     let label = world.spawn_empty().id();
-//     let label: ::polako::eml::Model<Label>  =  ::polako::eml::Model::new(label);
-//     let __root_model__ =  ::polako::eml::Model:: <Body> ::new(__root__);
-//     {
-//       let __model__ = {
-//         world.entity_mut(__root__).insert(::polako::eml::IntoBundle::into_bundle({
-//           use::polako::constructivism::traits:: * ;
-//           let fields =  <<Body as ::polako::constructivism::Construct> ::Params as ::polako::constructivism::Singleton> ::instance();
-//           let params =  <<Body as ::polako::constructivism::Construct> ::ExpandedParams as ::polako::constructivism::Extractable> ::as_params();
-//           let defined_params = params.defined();
-//           <Body as ::polako::constructivism::Construct> ::construct(defined_params)
-//         }));
-//         __root_model__
-//       };
-//       let __content__ = {
-//         let mut __content__ =  ::std::vec::Vec:: <_> ::new();
-//         __content__.reserve(2usize);
-//         let __content_item__ = {
-//           {
-//             let __model__ = {
-//               let __entity__ = world.spawn(::polako::eml::IntoBundle::into_bundle({
-//                 use::polako::constructivism::traits:: * ;
-//                 let fields =  <<Div as ::polako::constructivism::Construct> ::Params as ::polako::constructivism::Singleton> ::instance();
-//                 let params =  <<Div as ::polako::constructivism::Construct> ::ExpandedParams as ::polako::constructivism::Extractable> ::as_params();
-//                 let defined_params = params.defined();
-//                 <Div as ::polako::constructivism::Construct> ::construct(defined_params)
-//               })).id();
-//               ::polako::eml::Model:: <Div> ::new(__entity__)
-//             };
-//             let __content__ = {
-//               let mut __content__ =  ::std::vec::Vec:: <_> ::new();
-//               __content__.reserve(0usize);
-//               __content__
-//             };
-//             <Div as ::polako::eml::ElementBuilder> ::build_element(__content__).eml().write(world,__model__.entity);
-//             {
-//               let __entity__ = world.entity_mut(__model__.entity);
-//               {
-//                 let __ext__ =  <<Div as ::polako::constructivism::Construct> ::Design as ::polako::constructivism::Singleton> ::instance().on().hover();
-//                 __ext__.assign(__entity__, ::polako::flow::Hand::new(move|_params: &mut (::polako::bevy::prelude::Query< &mut _, ()> ,)| -> () {
-//                   let (_q0,) = _params;
-//                   {
-//                     let _value = ("hello!").into();
-//                     let mut _host = _q0.get_mut(label.entity).unwrap();
-//                     if<<Label as ::polako::constructivism::Construct> ::Props< ::polako::constructivism::Lookup>as ::polako::constructivism::Singleton> ::instance().getters().text(&_host).into_value().as_ref()!= &_value {
-//                       <<Label as ::polako::constructivism::Construct> ::Props< ::polako::constructivism::Lookup>as ::polako::constructivism::Singleton> ::instance().setters().set_text(_host.as_mut(),_value)
-//                     }
-//                   }
-//                 }));
-//               }
-//             }__model__
-//           }
-//         };
-//         let _:Implemented =  <<Body as ::polako::constructivism::Construct> ::Design as ::polako::constructivism::Singleton> ::instance().push_content(world, &mut __content__,__content_item__);
-//         let __content_item__ = {
-//           {
-//             let __model__ = {
-//               world.entity_mut(label.entity).insert(::polako::eml::IntoBundle::into_bundle({
-//                 use::polako::constructivism::traits:: * ;
-//                 let fields =  <<Label as ::polako::constructivism::Construct> ::Params as ::polako::constructivism::Singleton> ::instance();
-//                 let params =  <<Label as ::polako::constructivism::Construct> ::ExpandedParams as ::polako::constructivism::Extractable> ::as_params();
-//                 let defined_params = params.defined();
-//                 <Label as ::polako::constructivism::Construct> ::construct(defined_params)
-//               }));
-//               label
-//             };
-//             let __content__ = {
-//               let mut __content__ =  ::std::vec::Vec:: <_> ::new();
-//               __content__.reserve(0usize);
-//               __content__
-//             };
-//             <Label as ::polako::eml::ElementBuilder> ::build_element(__content__).eml().write(world,__model__.entity);
-//             {
-//               let __entity__ = world.entity_mut(__model__.entity);
-//             }__model__
-//           }
-//         };
-//         let _:Implemented =  <<Body as ::polako::constructivism::Construct> ::Design as ::polako::constructivism::Singleton> ::instance().push_content(world, &mut __content__,__content_item__);
-//         __content__
-//       };
-//       <Body as ::polako::eml::ElementBuilder> ::build_element(__content__).eml().write(world,__model__.entity);
-//       {
-//         let __entity__ = world.entity_mut(__model__.entity);
-//       }__model__
-//     };
-//   })
-    )
+        //     // resource(time, Time);
+        //     // bind(time.elapsed_seconds.fmt("{:0.2}") => elapsed.text);
+        //     // bind(time.elapsed_seconds * 0.5 - 0.5 => content.bg.r);
+        //     // bind(content.bg.hex => color.text);
+        //     // Body + Name { .value: "body" } [
+        //     //     content: Column { .bg: #9d9d9d, .s.padding: [25, 50] }[
+        //     //         Div { .bg: #dedede, .s.padding: 50 } [
+        //     //             "Hello world!"
+        //     //         ],
+        //     //         Row [
+        //     //             "Elapsed: ", elapsed: Label { .text: "0.00" }
+        //     //         ],
+        //     //         Row [
+        //     //             "Color: ", color: Label
+        //     //         ]
+        //     //     ]
+        //     // ]
+        // }
 }
 
 #[derive(Element)]
@@ -165,7 +85,7 @@ impl ElementBuilder for Div {
     }
 }
 
-#[derive(Component, Behaviour)]
+#[derive(Component, Behavior)]
 pub struct UiText {
     /// The text value of UiText element.
     pub text: String,
@@ -269,9 +189,6 @@ impl DivDesign {
     /// Everything based on Div can access the styles using param extensions: `Row { .s.padding: 25 }`
     pub fn s(&self) -> &'static Styles {
         &Styles
-    }
-    pub fn on(&self) -> &'static Signals {
-        &Signals
     }
 }
 

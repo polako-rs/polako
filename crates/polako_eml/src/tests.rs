@@ -19,7 +19,7 @@ impl ElementBuilder for Div {
     }
 }
 
-#[derive(Component, Behaviour)]
+#[derive(Component, Behavior)]
 pub struct TextElement {
     pub text: String,
     #[param(default = format!("regular"))]

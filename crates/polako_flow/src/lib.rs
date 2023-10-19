@@ -3,7 +3,7 @@ use std::{
 };
 
 use bevy::{
-    ecs::system::{Command, SystemBuffer, SystemParam},
+    ecs::{system::{Command, SystemBuffer, SystemParam, StaticSystemParam}, world::EntityMut},
     prelude::*,
     utils::{HashMap, HashSet},
 };
@@ -18,6 +18,7 @@ impl Plugin for FlowPlugin {
         app.init_resource::<FlowIteration>();
         app.insert_resource(FlowResource::new());
         app.insert_resource(BindTargets::new());
+        app.insert_resource(BypassUpdates::new());
     }
 }
 
@@ -59,6 +60,7 @@ pub enum FlowSet {
     Read,
     CleanupWriteChanges,
     Write,
+    HandleSignals,
     PopulateChanges,
 }
 
@@ -80,7 +82,7 @@ fn collect_changes<T: Component>(
 fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
     mut sources: Query<&mut ComponentBindSources<S, T, V>>,
     mut targets: ResMut<BindTargets>,
-    mut removals: RemovedComponents<BindTarget>,
+    mut removals: RemovedComponents<FlowItem>,
 ) {
     for target in removals.iter() {
         for source in targets.0.remove(&target).unwrap_or_default().iter() {
@@ -89,6 +91,16 @@ fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
             }
         }
     }
+}
+
+fn cleanup_on_demand_updates(
+    mut removals: RemovedComponents<FlowItem>,
+    mut bypass_updates: ResMut<BypassUpdates>,
+) {
+    for entity in removals.iter() {
+        bypass_updates.remove(&entity);
+    }
+
 }
 
 fn read_component_changes<S: Component, T: Component, V: Bindable>(
@@ -112,7 +124,7 @@ fn read_component_changes<S: Component, T: Component, V: Bindable>(
 
 fn cleanup_resource_readers<S: Resource, T: Component, V: Bindable>(
     mut sources: ResMut<ResourceBindSources<S, T, V>>,
-    mut removals: RemovedComponents<BindTarget>,
+    mut removals: RemovedComponents<FlowItem>,
 ) {
     for target in removals.iter() {
         sources.0.remove(&target);
@@ -253,6 +265,9 @@ struct RegisteredSystems {
     read_resource: HashCell,
     write: HashCell,
     populate_changes: HashCell,
+    handle_enters: HashCell,
+    handle_updates: HashCell,
+    handle_signals: HashCell,
 }
 
 impl RegisteredSystems {
@@ -263,6 +278,10 @@ impl RegisteredSystems {
             read_resource: HashCell(RefCell::new(HashSet::new())),
             write: HashCell(RefCell::new(HashSet::new())),
             populate_changes: HashCell(RefCell::new(HashSet::new())),
+            handle_enters: HashCell(RefCell::new(HashSet::new())),
+            handle_updates: HashCell(RefCell::new(HashSet::new())),
+            handle_signals: HashCell(RefCell::new(HashSet::new())),
+
         }
     }
 }
@@ -276,8 +295,10 @@ impl Flow {
             FlowSet::Read.after(FlowSet::CollectChanges),
             FlowSet::CleanupWriteChanges.after(FlowSet::Read),
             FlowSet::Write.after(FlowSet::CleanupWriteChanges),
-            FlowSet::PopulateChanges.after(FlowSet::Write),
+            FlowSet::HandleSignals.after(FlowSet::Write),
+            FlowSet::PopulateChanges.after(FlowSet::HandleSignals),
         ));
+        schedule.add_systems(cleanup_on_demand_updates.in_set(FlowSet::CleanupReaders));
         // schedule.
         Self {
             schedule: RefCell::new(schedule),
@@ -358,6 +379,40 @@ impl Flow {
             });
         });
     }
+
+    fn register_handle_enter_systems<S: SystemParam + 'static>(&self) {
+        self.registry.handle_enters.register::<S, _>(|| {
+            self.edit_schedule(|schedule| {
+                schedule.add_systems(
+                    handle_enters::<S>.in_set(FlowSet::HandleSignals)
+                );
+            })
+        })
+    }
+    fn register_handle_update_systems<S: SystemParam + 'static>(&self) {
+        self.registry.handle_updates.register::<S, _>(|| {
+            self.edit_schedule(|schedule| {
+                schedule.add_systems(
+                    handle_updates::<S>
+                        .in_set(FlowSet::HandleSignals)
+                        .after(handle_enters::<S>)
+                        .run_if(first_iteration)
+                );
+            });
+
+        })
+    }
+    fn register_handle_signals_systems<E: Signal, S: SystemParam + 'static>(&self) {
+        self.registry.handle_signals.register::<(E, S), _>(|| {
+            self.edit_schedule(|schedule| {
+                schedule.add_systems(
+                    handle_signals_system::<E, S>
+                        .in_set(FlowSet::HandleSignals)
+                        .after(handle_updates::<S>)
+                );
+            });
+        });
+    }
 }
 
 pub trait WorldFlow {
@@ -402,7 +457,7 @@ impl WorldFlow for World {
         }
 
         // setup target
-        self.entity_mut(to.entity).insert(BindTarget);
+        self.entity_mut(to.entity).insert(FlowItem);
         self.resource_mut::<BindTargets>()
             .0
             .entry(to.entity)
@@ -425,7 +480,7 @@ impl WorldFlow for World {
             writer: to.writer,
         };
 
-        self.entity_mut(to.entity).insert(BindTarget);
+        self.entity_mut(to.entity).insert(FlowItem);
         self.get_resource_or_insert_with(ResourceBindSources::<S, T, V>::new)
             .0
             .entry(to.entity)
@@ -534,7 +589,7 @@ impl<S: Resource, T: Component, V: Bindable> ResourceBindSources<S, T, V> {
 }
 
 #[derive(Component)]
-struct BindTarget;
+struct FlowItem;
 
 #[derive(Resource)]
 struct BindTargets(HashMap<Entity, HashSet<Entity>>);
@@ -696,9 +751,15 @@ pub trait Signal: Send + Sync + Sized + 'static {
     // }
 }
 
-pub struct Handler<S: SystemParam + 'static>(Box<dyn Fn(&mut S)>);
 
-#[derive(Component)]
+pub struct Handler<S: SystemParam + 'static>(Box<dyn Fn(&mut StaticSystemParam<S>)>);
+impl<S: SystemParam + 'static> Handler<S> {
+    pub fn execute<'w, 's>(&self, params: &mut StaticSystemParam<S>) {
+        (self.0)(params)
+    }
+}
+
+#[derive(Component, Deref, DerefMut)]
 pub struct Hands<E: Signal, S: SystemParam + 'static>(Vec<Hand<E, S>>);
 unsafe impl<E: Signal, S: SystemParam> Send for Hands<E, S> { }
 unsafe impl<E: Signal, S: SystemParam> Sync for Hands<E, S> { }
@@ -708,7 +769,7 @@ pub struct Hand<E: Signal, S: SystemParam + 'static> {
 }
 
 impl<E: Signal, S: SystemParam> Hand<E, S> {
-    pub fn new<F: Fn(&mut S) + 'static>(func: F) -> Self {
+    pub fn new<F: Fn(&mut StaticSystemParam<S>) + 'static>(func: F) -> Self {
         Self {
             func: Handler(Box::new(func)),
             marker: PhantomData,
@@ -716,12 +777,96 @@ impl<E: Signal, S: SystemParam> Hand<E, S> {
     }
 }
 
-fn hands_system<E: Signal, S: SystemParam + 'static>(
+#[derive(Resource, Deref, DerefMut)]
+struct BypassUpdates(HashSet<Entity>);
+
+impl BypassUpdates {
+    pub fn new() -> Self {
+        Self(HashSet::new())
+    }
+}
+
+fn handle_enters<S: SystemParam + 'static>(
+    hands_query: Query<&Hands<EnterSignal, S>>,
+    mut new_elements: EventReader<EnterSignal>,
+    mut params: StaticSystemParam<S>,
+) {
+    // let x = params.into_inner()
+    for hands in hands_query.iter_many(new_elements.iter().map(|e| e.entity)) {
+        hands.iter().for_each(|h| h.func.execute(&mut params))
+    }
+}
+fn handle_updates<S: SystemParam + 'static>(
+    bypass_updates: Res<BypassUpdates>,
+    hands_query: Query<&Hands<UpdateSignal, S>>,
+    // time: Res<Time>,
+    mut params: StaticSystemParam<S>,
+) {
+    for hands in hands_query.iter_many(bypass_updates.iter()) {
+        hands.iter().for_each(|h| h.func.execute(&mut params))
+    }
+}
+fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
     mut reader: EventReader<E::Event>,
     hands_query: Query<&Hands<E, S>>,
-    mut params: S,
+    mut params: StaticSystemParam<S>,
 ) {
+    // let x = *params;
     for hands in hands_query.iter_many(reader.iter().filter_map(|e| E::filter(e))) {
-        hands.0.iter().for_each(|h| (h.func.0)(&mut params));
+        hands.iter().for_each(|h| h.func.execute(&mut params));
+    }
+}
+
+
+#[derive(Signal)]
+pub struct EnterSignal {
+    pub entity: Entity
+}
+
+#[derive(Signal, Clone, Copy)]
+pub struct UpdateSignal {
+    pub entity: Entity,
+}
+pub struct OnDemandSignal<T: Signal>(PhantomData<T>);
+
+impl<T: Signal> OnDemandSignal<T> {
+    pub fn instance() -> &'static Self {
+        &OnDemandSignal(PhantomData)
+    }
+}
+
+impl OnDemandSignal<EnterSignal> {
+    pub fn assign<'w, S: SystemParam>(&self, mut entity: EntityMut<'w>, hand: Hand<EnterSignal, S>) {
+        if !entity.contains::<Hands<EnterSignal, S>>() {
+            entity.insert((
+                Hands(vec![hand]),
+                FlowItem,
+            ));
+        } else {
+            entity.get_mut::<Hands<EnterSignal, S>>().unwrap().0.push(hand);
+        }
+        let id = entity.id();
+        entity.world_scope(|world| {
+            world.resource_mut::<Events<EnterSignal>>().send(EnterSignal { entity: id });
+            world.resource::<FlowResource>().register_handle_enter_systems::<S>();
+        });
+    }
+}
+
+impl OnDemandSignal<UpdateSignal> {
+    pub fn assign<'w, S: SystemParam>(&self, mut entity: EntityMut<'w>, hand: Hand<UpdateSignal, S>) {
+        if !entity.contains::<Hands<UpdateSignal, S>>() {
+            entity.insert((
+                Hands(vec![hand]),
+                FlowItem,
+            ));
+        } else {
+            entity.get_mut::<Hands<UpdateSignal, S>>().unwrap().0.push(hand);
+        }
+        let id = entity.id();
+        entity.world_scope(|world| {
+            world.resource_mut::<BypassUpdates>().insert(id);
+            world.resource::<FlowResource>().register_handle_update_systems::<S>();
+        });
     }
 }

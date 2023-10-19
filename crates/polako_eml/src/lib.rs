@@ -2,13 +2,13 @@ use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use bevy::{
     ecs::{
-        system::{Command, CommandQueue},
+        system::{Command, CommandQueue, SystemParam},
         world::EntityMut,
     },
     prelude::*,
 };
 use polako_constructivism::{traits::Construct, *};
-use polako_flow::ChangedEntities;
+use polako_flow::{ChangedEntities, Hand, OnDemandSignal, EnterSignal, UpdateSignal};
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,7 @@ pub mod msg {
 }
 
 pub trait Element: ElementBuilder {
-    // type Signals: Singleton;
+    type Signals: Singleton + 'static;
 }
 
 
@@ -64,9 +64,11 @@ where
     }
 }
 
-/// Behaviour is about adding shared functionality
+/// Behavior is about adding shared functionality
 /// to elements. Like `Pressable` in `#[construct(Button -> Pressable -> Div)]
-pub trait Behaviour: Segment + Component {}
+pub trait Behavior: Segment + Component {
+    type Signals<T: Singleton + 'static>: Singleton + 'static;
+}
 
 /// Constraint is about to define the rules the eml
 /// tree is built. Like `AcceptOnly<T>` in `#[construct(TabView -> AcceptOnly<Tab> -> Div)]
@@ -163,12 +165,32 @@ impl<T> NotImplemented<T> {
 #[derive(Component, Construct)]
 #[construct(Empty -> Nothing)]
 pub struct Empty {}
+impl Element for Empty {
+    type Signals = EmptySignals;
+}
 
 impl ElementBuilder for Empty {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
         Blueprint::new(Eml::new(move |world, entity| {
             world.entity_mut(entity).push_children(&content);
         }))
+    }
+}
+
+
+pub struct EmptySignals;
+impl Singleton for EmptySignals {
+    fn instance() ->  &'static Self {
+        &EmptySignals
+    }
+}
+impl EmptySignals {
+    pub fn enter(&self) -> &'static OnDemandSignal<EnterSignal> {
+        OnDemandSignal::instance()
+    }
+
+    pub fn update(&self) -> &'static OnDemandSignal<UpdateSignal> {
+        OnDemandSignal::instance()
     }
 }
 
