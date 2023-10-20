@@ -5,7 +5,7 @@ use bevy::{
         system::{Command, CommandQueue, SystemParam},
         world::EntityMut,
     },
-    prelude::*,
+    prelude::{*, Resource},
 };
 use polako_constructivism::{traits::Construct, *};
 use polako_flow::{ChangedEntities, Hand, OnDemandSignal, EnterSignal, UpdateSignal, ComponentChanges, NotifyChange};
@@ -87,14 +87,14 @@ where Self::Type: Component
     }
 }
 
-pub struct Model<E: Element> {
+pub struct EntityMark<E: Element> {
     pub entity: Entity,
     marker: PhantomData<E>,
 }
 
-impl<E: Element> Model<E> {
+impl<E: Element> EntityMark<E> {
     pub fn new(entity: Entity) -> Self {
-        Model {
+        EntityMark {
             entity,
             marker: PhantomData,
         }
@@ -110,23 +110,49 @@ impl<E: Element> Model<E> {
     }
 }
 
-impl<E: Element> Copy for Model<E> {}
-
-
-impl<E: Element> std::fmt::Debug for Model<E> {
+impl<E: Element> Copy for EntityMark<E> {}
+impl<E: Element> std::fmt::Debug for EntityMark<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Model")
+        f.debug_struct("EntityMark")
             .field("entity", &self.entity)
             .finish()
     }
 }
-
-impl<E: Element> Clone for Model<E> {
+impl<E: Element> Clone for EntityMark<E> {
     fn clone(&self) -> Self {
         Self {
             entity: self.entity,
             marker: PhantomData,
         }
+    }
+}
+
+pub struct ResourceMark<R: Resource + Construct>(PhantomData<R>);
+
+impl<R: Resource + Construct> ResourceMark<R> {
+    pub fn new() -> Self {
+        ResourceMark(PhantomData)
+    }
+    pub fn getters(&self) -> &'static R::Props<Get> {
+        <<R as Construct>::Props<Get> as Singleton>::instance()
+    }
+    pub fn setters(&self) -> &'static R::Props<Set> {
+        <<R as Construct>::Props<Set> as Singleton>::instance()
+    }
+    pub fn descriptor(&self) -> &'static R::Props<Describe> {
+        <<R as Construct>::Props<Describe> as Singleton>::instance()
+    }
+}
+
+impl<R: Resource + Construct> Copy for ResourceMark<R> {}
+impl<R: Resource + Construct> std::fmt::Debug for ResourceMark<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntityMark").finish()
+    }
+}
+impl<R: Resource + Construct> Clone for ResourceMark<R> {
+    fn clone(&self) -> Self {
+        Self(PhantomData)
     }
 }
 
@@ -208,7 +234,7 @@ impl EmptyDesign {
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,
-        model: Model<E>,
+        model: EntityMark<E>,
     ) -> Implemented {
         content.push(model.entity);
         Implemented
@@ -288,7 +314,7 @@ impl<T> AcceptNoContentDesign<T> {
         &self,
         world: &mut World,
         content: &mut Vec<Entity>,
-        model: Model<E>,
+        model: EntityMark<E>,
     ) -> NotImplemented<msg::ElementAsContent> {
         NotImplemented::new()
     }

@@ -44,10 +44,16 @@ fn hello_world(mut commands: Commands) {
                         .on.update: (e) => {
                             delta.text = e.delta.fmt("{:0.4}");
                         },
+                        .on.update: () => {
+                            elapsed.text = time.elapsed.fmt("{:0.2}");
+                            // elapsed.text = time.elapsed * 0.25 -> "{:0.2}";
+                            // elapsed.text = (time.elapsed * 0.25).fmt("{:0.2}");
+                        },
                         .bg: #2d2d2d,
                     },
                     Row [ hello: Label { .text: "..., " }, "world!" ],
                     Row [ "Frame time: ", delta: Label { .text: "0.0000" } ],
+                    Row [ "Elapsed time: ", elapsed: Label { .text: "0.00" } ],
                     // Row [ "Elapsed time: ", Label { .bind.text.from: {{ time.elapsed.fmt(":0.2") }}}],
                 ]
             ]
@@ -192,7 +198,7 @@ impl DivDesign {
         &self,
         _: &mut World,
         content: &mut Vec<Entity>,
-        model: Model<E>,
+        model: EntityMark<E>,
     ) -> Implemented {
         content.push(model.entity);
         Implemented

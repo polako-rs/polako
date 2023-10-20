@@ -141,10 +141,10 @@ impl<'a> HandContext<'a> {
                         MarkKind::Resource => {
                             header = quote! { 
                                 #header
-                                let var = {
+                                let #var = {
                                     let _host = _params.#param_idx();
                                     #get.into_value().get()
-                                }
+                                };
                             }
                         }
                     }
@@ -165,11 +165,11 @@ impl<'a> HandContext<'a> {
                         MarkKind::Resource => {
                             header = quote! { 
                                 #header
-                                let var = {
+                                let #var = {
                                     let _inset = _params.#param_idx();
                                     let _host = &_inset;
                                     #get.into_value().get()
-                                }
+                                };
                             }
                         }
                     }

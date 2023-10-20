@@ -361,6 +361,16 @@ impl EmlDirective {
             _ => false,
         }
     }
+
+    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+        let eml = ctx.path("eml");
+        Ok(match self {
+            EmlDirective::Resource(ident, ty) => quote! {
+                let #ident = #eml::ResourceMark::<#ty>::new();
+            },
+            _ => quote! { }
+        })
+    }
 }
 
 impl Parse for EmlDirective {
@@ -702,7 +712,7 @@ impl EmlRoot {
                 let body = node.build(ctx, true)?;
                 let tag = &node.tag;
                 Ok(quote! {
-                    let __root_model__ = #eml::Model::<#tag>::new(__root__);
+                    let __root_model__ = #eml::EntityMark::<#tag>::new(__root__);
                     #body
                 })
             }
@@ -724,7 +734,7 @@ impl EmlRoot {
         let apply_mixins = mixins.build(ctx, &quote! { __root__ })?;
 
         Ok(quote! {
-            let __root_model__ = #eml::Model::<#tag>::new(__root__);
+            let __root_model__ = #eml::EntityMark::<#tag>::new(__root__);
             #apply_patches;
             <<#tag as #cst::Construct>::Base as #eml::ElementBuilder>::build_element(#build_content)
                 .eml()
@@ -748,7 +758,7 @@ impl EmlNode {
             if variables.contains_key(&model) {
                 throw!(
                     model,
-                    "Model {} already defined",
+                    "EntityMark {} already defined",
                     model.to_string()
                 );
             }
@@ -795,7 +805,7 @@ impl EmlNode {
         } else {
             quote! {{
                 let __entity__ = world.spawn(#eml::IntoBundle::into_bundle(#construct)).id();
-                #eml::Model::<#tag>::new(__entity__)
+                #eml::EntityMark::<#tag>::new(__entity__)
             }}
         };
         let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
@@ -941,15 +951,17 @@ impl Eml {
             if ident == entity {
                 body = quote! { #body
                     let #ident = world.spawn_empty().id();
-                    let #ident: #eml::Model<#tag> = #eml::Model::new(#ident);
+                    let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#ident);
                 }
             } else {
                 body = quote! { #body
-                    let #ident: #eml::Model<#tag> = #eml::Model::new(#entity);
+                    let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#entity);
                 }
             }
         }
         for directive in self.directives.iter() {
+            let built_directive = directive.build(&ctx)?;
+            body = quote! { #body #built_directive };
             let EmlDirective::Bind(bind) = directive else {
                 continue;
             };

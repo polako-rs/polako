@@ -124,8 +124,8 @@ derive_construct! {
     };
     props => {
         /// How much time has advanced since startup, as f32 seconds.
-        elapsed_seconds: f32 = [elapsed_seconds, readonly];
+        elapsed: f32 = [elapsed_seconds, readonly];
         /// How much time has advanced since the last update, as f32 seconds.
-        delta_seconds: f32 = [delta_seconds, readonly];
+        delta: f32 = [delta_seconds, readonly];
     };
 }

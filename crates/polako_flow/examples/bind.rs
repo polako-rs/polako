@@ -14,7 +14,7 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     let text = commands.spawn(TextBundle::default()).id();
     commands.add(BindResourceToComponent {
-        from: prop!(Time.elapsed_seconds).map(|s| format!("{s}")),
+        from: prop!(Time.elapsed).map(|s| format!("{s}")),
         to: text.set(prop!(Text.text)),
     })
 }
