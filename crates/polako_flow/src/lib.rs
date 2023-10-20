@@ -759,28 +759,46 @@ pub trait Signal: Send + Sync + Sized + 'static {
     // }
 }
 
+// pub trait ConstructedEvent {
+//     type Getters;
+//     fn getters(&self) -> &'static Self::Getters;
+// }
 
-pub struct Handler<S: SystemParam + 'static>(Box<dyn Fn(&mut StaticSystemParam<S>)>);
-impl<S: SystemParam + 'static> Handler<S> {
-    pub fn execute<'w, 's>(&self, params: &mut StaticSystemParam<S>) {
-        (self.0)(params)
+// impl<E: Construct + Event> ConstructedEvent for E {
+//     type Getters = <E as Construct>::Props<Get>;
+//     fn getters(&self) -> &'static Self::Getters {
+//         <<E as Construct>::Props<Get> as Singleton>::instance()
+//     }
+// }
+impl UpdateSignal {
+    pub fn getters(&self) -> &'static <UpdateSignal as Construct>::Props<Get> {
+        <<UpdateSignal as Construct>::Props<Get> as Singleton>::instance()
+    }
+    pub fn delta(&self) -> f32 {
+        self.delta
+    }
+}
+
+
+pub struct Handler<E: Event, S: SystemParam + 'static>(Box<dyn Fn(&E, &mut StaticSystemParam<S>)>);
+impl<E: Event, S: SystemParam + 'static> Handler<E, S> {
+    pub fn execute<'w, 's>(&self, event: &E, params: &mut StaticSystemParam<S>) {
+        (self.0)(event, params)
     }
 }
 
 #[derive(Component, Deref, DerefMut)]
-pub struct Hands<E: Signal, S: SystemParam + 'static>(Vec<Hand<E, S>>);
-unsafe impl<E: Signal, S: SystemParam> Send for Hands<E, S> { }
-unsafe impl<E: Signal, S: SystemParam> Sync for Hands<E, S> { }
-pub struct Hand<E: Signal, S: SystemParam + 'static> {
-    marker: PhantomData<E>,
-    func: Handler<S>
+pub struct Hands<E: Event, S: SystemParam + 'static>(Vec<Hand<E, S>>);
+unsafe impl<E: Event, S: SystemParam> Send for Hands<E, S> { }
+unsafe impl<E: Event, S: SystemParam> Sync for Hands<E, S> { }
+pub struct Hand<E: Event, S: SystemParam + 'static> {
+    func: Handler<E, S>,
 }
 
-impl<E: Signal, S: SystemParam> Hand<E, S> {
-    pub fn new<F: Fn(&mut StaticSystemParam<S>) + 'static>(func: F) -> Self {
+impl<E: Event, S: SystemParam> Hand<E, S> {
+    pub fn new<F: Fn(&E, &mut StaticSystemParam<S>) + 'static>(func: F) -> Self {
         Self {
             func: Handler(Box::new(func)),
-            marker: PhantomData,
         }
     }
 }
@@ -801,31 +819,39 @@ fn handle_enters<S: SystemParam + 'static>(
 ) {
     // let x = params.into_inner()
     for (entity, hands) in hands_query.iter_many(new_elements.iter().map(|e| e.entity)) {
+        let sig = EnterSignal { entity };
         hands.iter().for_each(|h| {
             info!("Handling enter for {entity:?}");
-            h.func.execute(&mut params);
+            h.func.execute(&sig, &mut params);
         })
     }
 }
 fn handle_updates<S: SystemParam + 'static>(
     bypass_updates: Res<BypassUpdates>,
-    hands_query: Query<&Hands<UpdateSignal, S>>,
-    // time: Res<Time>,
+    hands_query: Query<(Entity, &Hands<UpdateSignal, S>)>,
+    time: Res<Time>,
     mut params: StaticSystemParam<S>,
 ) {
-    for hands in hands_query.iter_many(bypass_updates.iter()) {
-        hands.iter().for_each(|h| h.func.execute(&mut params))
+    let delta = time.delta_seconds();
+    for (entity, hands) in hands_query.iter_many(bypass_updates.iter()) {
+        let sig = UpdateSignal { entity, delta };
+        hands.iter().for_each(|h| h.func.execute(&sig, &mut params))
     }
 }
 fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
     mut reader: EventReader<E::Event>,
-    hands_query: Query<&Hands<E, S>>,
+    hands_query: Query<&Hands<E::Event, S>>,
     mut params: StaticSystemParam<S>,
 ) {
     // let x = *params;
-    for hands in hands_query.iter_many(reader.iter().filter_map(|e| E::filter(e))) {
-        hands.iter().for_each(|h| h.func.execute(&mut params));
+    for (entity, event) in reader.iter().filter_map(|e| E::filter(e).map(|n| (n, e))) {
+        if let Ok(hands) = hands_query.get(entity) {
+            hands.iter().for_each(|h| h.func.execute(event, &mut params));    
+        }
     }
+    // for hands in hands_query.iter_many(reader.iter().filter_map(|e| E::filter(e))) {
+    //     hands.iter().for_each(|h| h.func.execute(&mut params));
+    // }
 }
 
 
@@ -834,20 +860,28 @@ pub struct EnterSignal {
     pub entity: Entity
 }
 
-#[derive(Signal, Clone, Copy)]
+#[derive(Signal, Clone, Copy, Construct)]
 pub struct UpdateSignal {
+    #[param(required)]
     pub entity: Entity,
+    pub delta: f32,
 }
-pub struct OnDemandSignal<T: Signal>(PhantomData<T>);
+pub struct OnDemandSignal<T: Event>(PhantomData<T>);
 
-impl<T: Signal> OnDemandSignal<T> {
+impl<T: Event> OnDemandSignal<T> {
     pub fn instance() -> &'static Self {
         &OnDemandSignal(PhantomData)
     }
 }
 
+// pub struct HandAssignment<E: Event, S: SystemParam + 'static>(
+//     PhantomData<E>,
+//     Hand<
+// );
+
 impl OnDemandSignal<EnterSignal> {
-    pub fn assign<'w, S: SystemParam>(&self, mut entity: EntityMut<'w>, hand: Hand<EnterSignal, S>) {
+    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static>(&self, entity: &mut EntityMut<'w>, func: F) {
+        let hand = Hand::new(func);
         if !entity.contains::<Hands<EnterSignal, S>>() {
             entity.insert((
                 Hands(vec![hand]),
@@ -865,7 +899,10 @@ impl OnDemandSignal<EnterSignal> {
 }
 
 impl OnDemandSignal<UpdateSignal> {
-    pub fn assign<'w, S: SystemParam>(&self, mut entity: EntityMut<'w>, hand: Hand<UpdateSignal, S>) {
+    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&UpdateSignal, &mut StaticSystemParam<S>) + 'static>(&self, entity: &mut EntityMut<'w>, func: F) {
+        let hand = Hand {
+            func: Handler(Box::new(func))
+        };
         if !entity.contains::<Hands<UpdateSignal, S>>() {
             entity.insert((
                 Hands(vec![hand]),

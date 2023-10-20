@@ -85,7 +85,6 @@ where Self::Type: Component
     fn notify_changed(&self, commands: &mut Commands, entity: Entity) {
         commands.add(NotifyChange::<Self::Type>::new(entity))
     }
-
 }
 
 pub struct Model<E: Element> {

@@ -33,7 +33,7 @@ pub struct HandContext<'a> {
     p_inout: HashMap<Mark, u8>,
     p_in: HashMap<Mark, u8>,
     p_out: HashMap<Mark, u8>,
-    locals: HashMap<Ident, Mark>,
+    locals: HashSet<Ident>,
     p_idx: u8,
     access: HashSet<Path>,
 }
@@ -46,13 +46,13 @@ impl<'a> std::ops::Deref for HandContext<'a> {
 }
 
 impl<'a> HandContext<'a> {
-    pub fn new(eml_context: &'a EmlContext) -> Self {
+    pub fn new(eml_context: &'a EmlContext, locals: Vec<Ident>) -> Self {
         HandContext { 
             eml_context,
             p_inout: HashMap::new(),
             p_in: HashMap::new(),
             p_out: HashMap::new(),
-            locals: HashMap::new(),
+            locals: locals.into_iter().collect(),
             p_idx: 0,
             access: HashSet::new()
         }
@@ -85,7 +85,19 @@ impl<'a> HandContext<'a> {
                 }
             }
         }
+        let event = if self.locals.is_empty() {
+            quote! { _event }
+        } else if self.locals.len() == 1 {
+            let mut it = self.locals.iter();
+            let e = it.next().unwrap();
+            quote! { #e }
+        } else {
+            let mut it = self.locals.iter().skip(1);
+            let e = it.next().unwrap();
+            throw!(e, "Unexpected extra hand argument.")
+        };
         Ok(quote! {
+            #event: &_,
             _params: &mut ::bevy::ecs::system::StaticSystemParam<(
                 ::bevy::prelude::Commands,
                 ::bevy::ecs::system::ParamSet<(#items)>,
@@ -96,6 +108,7 @@ impl<'a> HandContext<'a> {
         let mut header = quote! { };
         for path in self.access.iter() {
             let ident = path.mark();
+            let var = path.var();
             let mut get = quote! { #ident.getters() };
             for (idx, part) in path.0.iter().skip(1).enumerate() {
                 if idx == 0 {
@@ -104,10 +117,14 @@ impl<'a> HandContext<'a> {
                     get = quote! { #get.#part() };
                 }
             }
-            if let Some(mark) = self.locals.get(&ident) {
-
+            if let Some(event) = self.locals.get(&ident) {
+                header = quote! { #header
+                    let #var = {
+                        let _host = &#event;
+                        #get.into_value().get()
+                    };
+                };
             } else if let Some(mark) = self.variables.get(&ident) {
-                let var = path.var();
                 if let Some(idx) = self.p_in.get(&mark) {
                     let param_idx = format_ident!("p{idx}");
                     match mark.kind {
@@ -229,7 +246,7 @@ impl<'a> HandContext<'a> {
 
     pub fn add_input(&mut self, path: &Path) -> syn::Result<()> {
         let ident = path.mark();
-        if self.locals.contains_key(&ident) {
+        if self.locals.contains(&ident) {
             // do nothing, this is an argument
         } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
             if self.p_inout.contains_key(&mark) {
@@ -247,7 +264,7 @@ impl<'a> HandContext<'a> {
     }
     pub fn add_output(&mut self, path: &Path) -> syn::Result<(Mark, u8)> {
         let ident = path.mark();
-        if self.locals.contains_key(&ident) {
+        if self.locals.contains(&ident) {
             throw!(ident, "Can't write to hand local mark");
         } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
             if let Some(idx) = self.p_inout.get(&mark) {
@@ -268,7 +285,8 @@ impl<'a> HandContext<'a> {
 
 #[derive(Clone)]
 pub struct Hand {
-    statements: Vec<Statement>
+    locals: Vec<Ident>,
+    statements: Vec<Statement>,
 }
 
 impl Parse for Hand {
@@ -276,11 +294,9 @@ impl Parse for Hand {
         let args;
         // throw!(input, "parsing hand");
         parenthesized!(args in input);
-        if !args.is_empty() {
-            throw!(args, "Hand args is not supported yet")
-        }
+        let locals = args.parse_terminated(Ident::parse, Token![,])?.iter().cloned().collect();
         input.parse::<Token![=>]>()?;
-        Ok(Hand { statements: if input.peek(token::Brace) {
+        Ok(Hand { locals, statements: if input.peek(token::Brace) {
             let stmts;
             braced!(stmts in input);
             stmts
@@ -297,20 +313,19 @@ impl Parse for Hand {
 
 impl Hand {
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
-        let mut ctx = HandContext::new(ctx);
+        let mut ctx = HandContext::new(ctx, self.locals.clone());
         let mut body = quote! { };
         for stmt in self.statements.iter() {
             let stmt = stmt.build(&mut ctx)?;
             body = quote! { #body #stmt; }
         }
-        let flow = ctx.path("flow");
         let signature = ctx.signature()?;
         let header = ctx.header()?;
         Ok(quote!{
-            #flow::Hand::new(move |#signature| {
+            move |#signature| {
                 #header
                 #body
-            })
+            }
         })
     }
 }

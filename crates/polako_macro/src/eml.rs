@@ -801,7 +801,7 @@ impl EmlNode {
         let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
         let apply_extensions = self
             .args
-            .build_extensions(ctx, tag, &quote! { __entity__ })?;
+            .build_extensions(ctx, tag, &quote! { &mut __entity__ })?;
         Ok(quote_spanned! {self.tag.span()=> {
             let __model__ = #model;
             let __content__ = #content;
@@ -809,7 +809,7 @@ impl EmlNode {
                 .eml()
                 .write(world, __model__.entity);
             {
-                let __entity__ = world.entity_mut(__model__.entity);
+                let mut __entity__ = world.entity_mut(__model__.entity);
                 #apply_extensions
             }
             #apply_mixins

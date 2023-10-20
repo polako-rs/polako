@@ -32,13 +32,13 @@ macro_rules! impl_signal {
                     })
             }
 
-            pub fn assign<'w, S: SystemParam>(
-                &self,
-                _entity: EntityMut<'w>,
-                _value: Hand<$name, S>,
-            ) {
+            // pub fn assign<'w, S: SystemParam>(
+            //     &self,
+            //     _entity: &mut EntityMut<'w>,
+            //     _value: Hand<$name, S>,
+            // ) {
                 
-            }
+            // }
         }
     };
 }

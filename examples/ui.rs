@@ -34,26 +34,27 @@ fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(
         eml! {
-            // resource(time, Time);
+            resource(time, Time);
             Body [
                 Column [
                     Div {
-                        // .on.hover: () => {
-                        //     label.text = source.text.fmt("{}, world!")
-                        // },
                         .on.enter: () => {
                             hello.text = "Hello, ";
                         },
-                        // .on.update: () => {
-                        //     wrld.text = time.elapsed_seconds.fmt("{:0.2}");
-                        // },
+                        .on.update: (e) => {
+                            delta.text = e.delta.fmt("{:0.4}");
+                        },
                         .bg: #2d2d2d,
                     },
                     Row [ hello: Label { .text: "..., " }, "world!" ],
-                    // wrld: Label { .text: "world!" },
+                    Row [ "Frame time: ", delta: Label { .text: "0.0000" } ],
+                    // Row [ "Elapsed time: ", Label { .bind.text.from: {{ time.elapsed.fmt(":0.2") }}}],
                 ]
             ]
         }
+        
+
+
 
     );
 
