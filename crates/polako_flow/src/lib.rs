@@ -19,6 +19,8 @@ impl Plugin for FlowPlugin {
         app.insert_resource(FlowResource::new());
         app.insert_resource(BindTargets::new());
         app.insert_resource(BypassUpdates::new());
+        app.add_event::<EnterSignal>();
+        app.add_event::<UpdateSignal>();
     }
 }
 
@@ -496,6 +498,7 @@ impl WorldFlow for World {
 pub trait Bindable: Send + Sync + Clone + std::fmt::Debug + PartialEq + 'static {}
 impl<T: Send + Sync + Clone + PartialEq + std::fmt::Debug + 'static> Bindable for T {}
 
+pub type ComponentChanges<'w, T> = Res<'w, Channel<ChangedEntity<T>>>;
 type Changes<'w, T, V> = Res<'w, Channel<ApplyChange<T, V>>>;
 #[derive(Resource)]
 pub struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
@@ -510,7 +513,7 @@ impl<T> Channel<T> {
             cell.borrow_mut().clear()
         }
     }
-    fn send(&self, event: T) {
+    pub fn send(&self, event: T) {
         let id = std::thread::current().id();
         {
             let read = self.0.read().unwrap();
@@ -555,7 +558,7 @@ impl<C: Component> ChangedEntities<C> {
     }
 }
 
-struct ChangedEntity<T> {
+pub struct ChangedEntity<T> {
     entity: Entity,
     marker: PhantomData<T>,
 }
@@ -565,6 +568,11 @@ impl<T> ChangedEntity<T> {
             entity,
             marker: PhantomData,
         }
+    }
+}
+impl<T> From<Entity> for ChangedEntity<T> {
+    fn from(value: Entity) -> Self {
+        ChangedEntity::new(value)
     }
 }
 
@@ -787,13 +795,16 @@ impl BypassUpdates {
 }
 
 fn handle_enters<S: SystemParam + 'static>(
-    hands_query: Query<&Hands<EnterSignal, S>>,
+    hands_query: Query<(Entity, &Hands<EnterSignal, S>)>,
     mut new_elements: EventReader<EnterSignal>,
     mut params: StaticSystemParam<S>,
 ) {
     // let x = params.into_inner()
-    for hands in hands_query.iter_many(new_elements.iter().map(|e| e.entity)) {
-        hands.iter().for_each(|h| h.func.execute(&mut params))
+    for (entity, hands) in hands_query.iter_many(new_elements.iter().map(|e| e.entity)) {
+        hands.iter().for_each(|h| {
+            info!("Handling enter for {entity:?}");
+            h.func.execute(&mut params);
+        })
     }
 }
 fn handle_updates<S: SystemParam + 'static>(
@@ -868,5 +879,22 @@ impl OnDemandSignal<UpdateSignal> {
             world.resource_mut::<BypassUpdates>().insert(id);
             world.resource::<FlowResource>().register_handle_update_systems::<S>();
         });
+    }
+}
+
+pub struct NotifyChange<C: Component> {
+    entity: Entity,
+    marker: PhantomData<C>,
+}
+impl<C: Component> NotifyChange<C> {
+    pub fn new(entity: Entity) -> Self {
+        NotifyChange { entity, marker: PhantomData }
+    }
+}
+impl<C: Component> Command for NotifyChange<C> {
+    fn apply(self, world: &mut World) {
+        if let Some(mut changes) = world.get_resource_mut::<ChangedEntities<C>>() {
+            changes.add(self.entity)
+        }
     }
 }

@@ -8,7 +8,7 @@ use bevy::{
     prelude::*,
 };
 use polako_constructivism::{traits::Construct, *};
-use polako_flow::{ChangedEntities, Hand, OnDemandSignal, EnterSignal, UpdateSignal};
+use polako_flow::{ChangedEntities, Hand, OnDemandSignal, EnterSignal, UpdateSignal, ComponentChanges, NotifyChange};
 
 #[cfg(test)]
 mod tests;
@@ -75,11 +75,16 @@ pub trait Behavior: Segment + Component {
 pub trait Constraint: Segment + IntoBundle {}
 
 
-pub trait PolakoType: TypeReference {
-
+pub trait PolakoType: TypeReference where Self::Type: Component {
+    fn notify_changed(&self, commands: &mut Commands, entity: Entity);
 }
 
-impl<T: TypeReference> PolakoType for T {
+impl<T: TypeReference> PolakoType for T
+where Self::Type: Component
+{
+    fn notify_changed(&self, commands: &mut Commands, entity: Entity) {
+        commands.add(NotifyChange::<Self::Type>::new(entity))
+    }
 
 }
 
@@ -126,12 +131,6 @@ impl<E: Element> Clone for Model<E> {
     }
 }
 
-pub struct NotifyChanged<E: Element>(Model<E>);
-impl<E: Element> Command for NotifyChanged<E> {
-    fn apply(self, world: &mut World) {
-        world.resource_mut::<ChangedEntities<E>>().add(self.0.entity);
-    }
-}
 
 pub struct Eml<Root: ElementBuilder>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
 

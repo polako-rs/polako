@@ -1,5 +1,6 @@
 use std::ops::DerefMut;
 
+use bevy::ecs::system::StaticSystemParam;
 use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
@@ -27,24 +28,33 @@ fn main() {
         .run();
 }
 
+
+
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(
         eml! {
+            // resource(time, Time);
             Body [
-                Div {
-                    // .on.hover: () => {
-                    //     label.text = source.text.fmt("{}, world!")
-                    // },
-                    .on.enter: () =>{
-                        label.text = "Hello, ";
+                Column [
+                    Div {
+                        // .on.hover: () => {
+                        //     label.text = source.text.fmt("{}, world!")
+                        // },
+                        .on.enter: () => {
+                            hello.text = "Hello, ";
+                        },
+                        // .on.update: () => {
+                        //     wrld.text = time.elapsed_seconds.fmt("{:0.2}");
+                        // },
+                        .bg: #2d2d2d,
                     },
-                    .bg: #2d2d2d,
-                },
-                label: Label { .text: "..., "},
-                "world!",
+                    Row [ hello: Label { .text: "..., " }, "world!" ],
+                    // wrld: Label { .text: "world!" },
+                ]
             ]
         }
+
     );
 
 

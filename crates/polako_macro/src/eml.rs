@@ -630,7 +630,7 @@ impl Parse for EmlRoot {
 
 pub struct EmlContext {
     pub context: Context,
-    pub variables: HashMap<Ident, Variable>,
+    pub variables: HashMap<Ident, Mark>,
     strict: bool,
 }
 
@@ -658,7 +658,7 @@ impl EmlRoot {
             EmlRoot::Base { tag, .. } => tag.clone(),
         }
     }
-    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Variable>) -> syn::Result<()> {
+    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Mark>) -> syn::Result<()> {
         match self {
             EmlRoot::Element(node) => node.fetch_variables(variables, true),
             EmlRoot::Base {
@@ -743,7 +743,7 @@ pub struct EmlNode {
 }
 
 impl EmlNode {
-    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Variable>, root: bool) -> syn::Result<()> {
+    pub fn fetch_variables(&self, variables: &mut HashMap<Ident, Mark>, root: bool) -> syn::Result<()> {
         if let Some(model) = self.model.clone() {
             if variables.contains_key(&model) {
                 throw!(
@@ -753,16 +753,16 @@ impl EmlNode {
                 );
             }
             variables.insert(model.clone(), if root {
-                 Variable {
+                 Mark {
                     ident: parse_quote! { __root__ },
                     ty: self.tag.clone(),
-                    kind: VariableKind::Model ,
+                    kind: MarkKind::Entity ,
                 }
             } else {
-                Variable {
+                Mark {
                     ident: model.clone(),
                     ty: self.tag.clone(),
-                    kind: VariableKind::Model,
+                    kind: MarkKind::Entity,
                 }
             });
         }
@@ -844,34 +844,28 @@ impl Parse for EmlNode {
     }
 }
 
-#[derive(Clone)]
-pub enum VariableKind {
-    Model,
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub enum MarkKind {
+    Entity,
     Resource,
 }
 
-#[derive(Clone)]
-pub struct Variable {
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Mark {
     pub ident: Ident,
     pub ty: Ident,
-    pub kind: VariableKind,
+    pub kind: MarkKind,
 }
 
-impl Variable {
+impl Mark {
     pub fn is_helper(&self) -> bool {
         &self.ident.to_string() == "DOT_AUTOCOMPLETE_TOKEN"
     }
-    pub fn is_model(&self) -> bool {
-        match self.kind {
-            VariableKind::Model => true,
-            VariableKind::Resource => false,
-        }
+    pub fn is_entity(&self) -> bool {
+        matches!(self.kind, MarkKind::Entity)
     }
     pub fn is_resource(&self) -> bool {
-        match self.kind {
-            VariableKind::Model => false,
-            VariableKind::Resource => true,
-        }
+        matches!(self.kind, MarkKind::Resource)
     }
 }
 
@@ -907,20 +901,20 @@ impl Parse for Eml {
 }
 
 impl Eml {
-    pub fn fetch_variables(&self) -> syn::Result<HashMap<Ident, Variable>> {
+    pub fn fetch_variables(&self) -> syn::Result<HashMap<Ident, Mark>> {
         let mut variables = HashMap::new();
         let autocomplete = format_ident!("DOT_AUTOCOMPLETE_TOKEN");
-        variables.insert(autocomplete.clone(), Variable { 
+        variables.insert(autocomplete.clone(), Mark { 
             ident: autocomplete.clone(),
             ty: autocomplete.clone(),
-            kind: VariableKind::Model,
+            kind: MarkKind::Entity,
         });
         for directive in self.directives.iter() {
             if let EmlDirective::Resource(ident, ty) = directive {
-                variables.insert(ident.clone(), Variable {
+                variables.insert(ident.clone(), Mark {
                     ident: ident.clone(),
                     ty: ty.clone(),
-                    kind: VariableKind::Resource,
+                    kind: MarkKind::Resource,
                 });
             }
         }
@@ -941,7 +935,7 @@ impl Eml {
             strict: self.strict,
         };
         let eml = ctx.path("eml");
-        for (ident, variable) in ctx.variables.iter().filter(|v| v.1.is_model() && !v.1.is_helper()) {
+        for (ident, variable) in ctx.variables.iter().filter(|v| v.1.is_entity() && !v.1.is_helper()) {
             let entity = &variable.ident;
             let tag = &variable.ty;
             if ident == entity {
@@ -976,7 +970,7 @@ impl Eml {
             } else {
                 from_prop
             };
-            let from_bind = if from_var.is_model() {
+            let from_bind = if from_var.is_entity() {
                 let ident = &from_var.ident;
                 quote! { #ident.entity.get(#from_prop) }
             } else {
@@ -1005,7 +999,7 @@ impl Eml {
                     #ident.entity.set(#to_prop)
                 }
             };
-            body = if from_var.is_model() {
+            body = if from_var.is_entity() {
                 quote! { #body
                     world.bind_component_to_component(#from_bind, #to_bind);
                 }

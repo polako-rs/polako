@@ -1,11 +1,11 @@
-use std::{fmt::Debug, collections::HashMap};
+use std::{fmt::Debug, collections::{HashMap, HashSet}};
 
 use constructivist::throw;
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2, braced};
 
-use crate::eml::{EmlContext, Variable, VariableKind};
+use crate::eml::{EmlContext, Mark, MarkKind};
 
 /// Samples:
 /// ```ignore
@@ -26,6 +26,246 @@ use crate::eml::{EmlContext, Variable, VariableKind};
 ///     )
 /// )
 /// ```
+
+
+pub struct HandContext<'a> {
+    eml_context: &'a EmlContext,
+    p_inout: HashMap<Mark, u8>,
+    p_in: HashMap<Mark, u8>,
+    p_out: HashMap<Mark, u8>,
+    locals: HashMap<Ident, Mark>,
+    p_idx: u8,
+    access: HashSet<Path>,
+}
+
+impl<'a> std::ops::Deref for HandContext<'a> {
+    type Target = EmlContext;
+    fn deref(&self) -> &Self::Target {
+        self.eml_context
+    }
+}
+
+impl<'a> HandContext<'a> {
+    pub fn new(eml_context: &'a EmlContext) -> Self {
+        HandContext { 
+            eml_context,
+            p_inout: HashMap::new(),
+            p_in: HashMap::new(),
+            p_out: HashMap::new(),
+            locals: HashMap::new(),
+            p_idx: 0,
+            access: HashSet::new()
+        }
+    }
+    pub fn signature(&self) -> syn::Result<TokenStream> {
+        let mut params = self.p_inout.iter().chain(self.p_in.iter()).chain(self.p_out.iter()).collect::<Vec<_>>();
+        let flow = self.path("flow");
+        // std::cmp::PartialOrd::partial_cmp(&self, other)
+        params.sort_by_key(|(_, idx)| *idx);
+        let mut items = quote! { };
+        let mut changes = quote! { };
+        for (mark, _) in params.iter() {
+            match mark.kind {
+                MarkKind::Entity => {
+                    if self.p_in.contains_key(&mark) {
+                        items = quote! { #items ::bevy::prelude::Query<& _>, };
+                        changes = quote! { #changes (), }
+                    } else {
+                        items = quote! { #items ::bevy::prelude::Query<&mut _>, };
+                        changes = quote! { #changes #flow::NotifyChange<_>, }
+                    }
+                },
+                MarkKind::Resource => {
+                    if self.p_in.contains_key(&mark) {
+                        items = quote! { #items ::bevy::prelude::Res<_>, };
+                    } else {
+                        items = quote! { #items ::bevy::prelude::ResMut<_>, };
+                    }
+                    changes = quote! { #changes (), }
+                }
+            }
+        }
+        Ok(quote! {
+            _params: &mut ::bevy::ecs::system::StaticSystemParam<(
+                ::bevy::prelude::Commands,
+                ::bevy::ecs::system::ParamSet<(#items)>,
+            )>
+        })
+    }
+    pub fn header(&self) -> syn::Result<TokenStream> {
+        let mut header = quote! { };
+        for path in self.access.iter() {
+            let ident = path.mark();
+            let mut get = quote! { #ident.getters() };
+            for (idx, part) in path.0.iter().skip(1).enumerate() {
+                if idx == 0 {
+                    get = quote! { #get.#part(&_host) };
+                } else {
+                    get = quote! { #get.#part() };
+                }
+            }
+            if let Some(mark) = self.locals.get(&ident) {
+
+            } else if let Some(mark) = self.variables.get(&ident) {
+                let var = path.var();
+                if let Some(idx) = self.p_in.get(&mark) {
+                    let param_idx = format_ident!("p{idx}");
+                    match mark.kind {
+                        MarkKind::Entity => {
+                            header = quote! {
+                                #header
+                                let #var = {
+                                    let _inset = _params.#param_idx();
+                                    let _host = _inset.get(#ident.entity).unwrap();
+                                    #get.into_value().get()
+                                };
+                            }
+                        },
+                        MarkKind::Resource => {
+                            header = quote! { 
+                                #header
+                                let var = {
+                                    let _host = _params.#param_idx();
+                                    #get.into_value().get()
+                                }
+                            }
+                        }
+                    }
+                } else if let Some(idx) = self.p_out.get(&mark).or_else(|| self.p_inout.get(&mark)) {
+                    let param_idx = format_ident!("p{idx}");
+                    match mark.kind {
+                        MarkKind::Entity => {
+                            header = quote! {
+                                #header
+                                let #var = {
+                                    let _inset = _params.#param_idx();
+                                    let _mut = _inset.get(#ident.entity).unwrap();
+                                    let _host = &_mut;
+                                    #get.into_value().get()
+                                };
+                            }
+                        },
+                        MarkKind::Resource => {
+                            header = quote! { 
+                                #header
+                                let var = {
+                                    let _inset = _params.#param_idx();
+                                    let _host = &_inset;
+                                    #get.into_value().get()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(quote! {
+            let (_commands, _params) = ::std::ops::DerefMut::deref_mut(_params);
+            #header
+        })
+    }
+    pub fn footer(&self) -> syn::Result<TokenStream> {
+        Ok(quote! { })
+    }
+    pub fn read(&mut self, path: &Path) -> syn::Result<TokenStream> {
+        let ident = path.var();
+        self.add_input(&path)?;
+        self.access.insert(path.clone());
+        Ok(quote! { #ident })
+    }
+    pub fn write(&mut self, path: &Path, value: TokenStream) -> syn::Result<TokenStream> {
+        let ident = path.var();
+        let (mark, idx) = self.add_output(&path)?;
+        let mark_ident = &mark.ident;
+        let param = format_ident!("p{idx}");
+        let host = match mark.kind {
+            MarkKind::Entity => quote! {
+                _params.#param().get_mut(#mark_ident.entity).unwrap()
+            },
+            MarkKind::Resource => quote! {
+                _params.#param()
+            }
+        };
+        let notify_change = match mark.kind {
+            MarkKind::Entity => {
+                let descriptor = &path.0[1];
+                quote! {
+                    #mark_ident.descriptor().#descriptor().notify_changed(
+                        _commands,
+                        #mark_ident.entity
+                    )
+                    // _changes.#param().send(#mark_ident.entity)
+                }
+            },
+            MarkKind::Resource => quote! {
+
+            }
+        };
+        let last = path.0.len() - 2;
+        let mut set = quote! { #mark_ident.setters() };
+        for (idx, part) in path.0.iter().skip(1).enumerate() {
+            let setter = format_ident!("set_{}", part);
+            if idx == 0 && idx == last {
+                set = quote! { #set.#setter(#host.as_mut(), _val) };
+            } else if idx == last {
+                set = quote! { #set.#setter(_val)};
+            } else if idx == 0 {
+                set = quote! { #set.#part(#host.as_mut()) };
+            } else {
+                set = quote! { #set.#part() };
+            }
+        }
+        self.access.insert(path.clone());
+        Ok(quote! {
+            {
+                let _val = #value.into();
+                if #ident != _val {
+                    #set;
+                    #notify_change;
+                }
+            }
+        })
+    }
+
+    pub fn add_input(&mut self, path: &Path) -> syn::Result<()> {
+        let ident = path.mark();
+        if self.locals.contains_key(&ident) {
+            // do nothing, this is an argument
+        } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
+            if self.p_inout.contains_key(&mark) {
+                // do nothing, already defined as in + out
+            } else if let Some(output) = self.p_out.remove(&mark) {
+                self.p_inout.insert(mark, output);
+            } else {
+                self.p_in.insert(mark, self.p_idx);
+                self.p_idx += 1;
+            }
+        } else {
+            throw!(ident, "Undefined mark");
+        };
+        Ok(())
+    }
+    pub fn add_output(&mut self, path: &Path) -> syn::Result<(Mark, u8)> {
+        let ident = path.mark();
+        if self.locals.contains_key(&ident) {
+            throw!(ident, "Can't write to hand local mark");
+        } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
+            if let Some(idx) = self.p_inout.get(&mark) {
+                Ok((mark, *idx))
+            } else if let Some(output) = self.p_in.remove(&mark) {
+                self.p_inout.insert(mark.clone(), output);
+                Ok((mark, output))
+            } else {
+                self.p_out.insert(mark.clone(), self.p_idx);
+                self.p_idx += 1;
+                Ok((mark, self.p_idx - 1))
+            }
+        } else {
+            throw!(ident, "Undefined mark");
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Hand {
     statements: Vec<Statement>
@@ -57,108 +297,38 @@ impl Parse for Hand {
 
 impl Hand {
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
-        let bevy = ctx.path("bevy");
-        let flow = ctx.path("flow");
-        let mut params = HandParams::new();
-        for statement in self.statements.iter() {
-            statement.fetch_params(ctx, &mut params)?;
-        }
-        let mut sp_decl = quote! {};
-        let mut sp_decs = quote! {};
-        let mut query_idx = 0;
-        let mut res_idx = 0;
-        let mut sp_vars = HashMap::new();
-        for (ident, var) in params.inout.iter().chain(params.output.iter()) {
-            match var.kind {
-                VariableKind::Model => {
-                    let qp = format_ident!("_q{query_idx}");
-                    query_idx += 1;
-                    sp_decl = quote! { #sp_decl #bevy::prelude::Query<&mut _>, };
-                    sp_decs = quote! { #sp_decs #qp, };
-                    sp_vars.insert(ident.clone(), qp);
-                },
-                VariableKind::Resource => {
-                    let rp = format_ident!("_r{res_idx}");
-                    res_idx += 1;
-                    sp_decl = quote! { #sp_decl #bevy::prelude::ResMut<_>, };
-                    sp_decs = quote! { #sp_decs #rp, };
-                    sp_vars.insert(ident.clone(), rp);
-                }
-            }
-        }
-        for (ident, var) in params.input.iter() {
-            match var.kind {
-                VariableKind::Model => {
-                    let qp = format_ident!("_q{query_idx}");
-                    query_idx += 1;
-                    sp_decl = quote! { #sp_decl #bevy::prelude::Query<&_>, };
-                    sp_decs = quote! { #sp_decs #qp, };
-                    sp_vars.insert(ident.clone(), qp);
-                },
-                VariableKind::Resource => {
-                    let rp = format_ident!("_r{res_idx}");
-                    res_idx += 1;
-                    sp_decl = quote! { #sp_decl #bevy::prelude::Res<_>, };
-                    sp_decs = quote! { #sp_decs #rp, };
-                    sp_vars.insert(ident.clone(), rp);
-                }
-            }
-        }
+        let mut ctx = HandContext::new(ctx);
         let mut body = quote! { };
         for stmt in self.statements.iter() {
-            let s = stmt.build(ctx, &sp_vars)?;
-            body = quote! { #body #s };
+            let stmt = stmt.build(&mut ctx)?;
+            body = quote! { #body #stmt; }
         }
-
-
+        let flow = ctx.path("flow");
+        let signature = ctx.signature()?;
+        let header = ctx.header()?;
         Ok(quote!{
-            #flow::Hand::new(move |_params: &mut ::bevy::ecs::system::StaticSystemParam<(#sp_decl)>| {
-                let (#sp_decs) = ::std::ops::DerefMut::deref_mut(_params);
+            #flow::Hand::new(move |#signature| {
+                #header
                 #body
             })
         })
     }
 }
 
-pub struct HandParams {
-    inout: HashMap<Ident, Variable>,
-    input: HashMap<Ident, Variable>,
-    output: HashMap<Ident, Variable>,
-}
-impl HandParams {
-    pub fn new() -> Self {
-        HandParams {
-            inout: HashMap::new(),
-            input: HashMap::new(),
-            output: HashMap::new()
-        }
-    }
-    pub fn add_input(&mut self, mark: Ident, var: Variable) {
-        if self.inout.contains_key(&mark) {
-            return;
-        } else if let Some(output) = self.output.remove(&mark) {
-            self.inout.insert(mark, output);
-        } else {
-            self.input.insert(mark, var);
-        }
-    }
-    pub fn add_output(&mut self, mark: Ident, var: Variable) {
-        if self.inout.contains_key(&mark) {
-            return;
-        } else if let Some(input) = self.inout.remove(&mark) {
-            self.inout.insert(mark, input);
-        } else {
-            self.output.insert(mark, var);
-        }
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct Path(Vec<Ident>);
 
 impl Path {
     pub fn mark(&self) -> Ident {
         self.0[0].clone()
+    }
+
+    pub fn var(&self) -> Ident {
+        let mut ident = format_ident!("_v_{}", self.0[0]);
+        for part in self.0.iter().skip(1) {
+            ident = format_ident!("{}_{}", ident, part);
+        }
+        ident
     }
 }
 
@@ -179,6 +349,14 @@ impl PartialEq for Path {
         let a = self.0.iter().map(|i| i.to_string()).collect::<Vec<_>>();
         let b = other.0.iter().map(|i| i.to_string()).collect::<Vec<_>>();
         a == b
+    }
+}
+
+impl std::hash::Hash for Path {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for part in self.0.iter() {
+            state.write(part.to_string().as_bytes())
+        }
     }
 }
 
@@ -244,57 +422,45 @@ impl Parse for Statement {
 }
 
 impl Statement {
-    pub fn fetch_params(&self, ctx: &EmlContext, params: &mut HandParams) -> syn::Result<()> {
+    pub fn build(&self, ctx: &mut HandContext) -> syn::Result<TokenStream> {
         match self {
             Statement::Assign(path, expr) => {
-                let mark = path.mark();
-                let Some(output) = ctx.variables.get(&mark) else {
-                    throw!(mark, "Undefined output mark '{}'", mark.to_string());
-                };
-                params.add_output(mark, output.clone());
-                expr.fetch_params(ctx, params)?;
-            }
-        }
-        Ok(())
-    }
+                let expr = expr.build(ctx)?;
+                ctx.write(path, expr)
+                // let mark = path.mark();
+                // let host = params.get(&mark).expect("No variable in params");
+                // let value = expr.build(ctx, params)?;
+                // let last = path.0.len() - 2;
+                // let mut get = quote! { #mark.getters() };
+                // let mut set = quote! { #mark.setters() };
+                // for (idx, part) in path.0.iter().skip(1).enumerate() {
+                //     let setter = format_ident!("set_{}", part);
+                //     if idx == 0 {
+                //         get = quote! { #get.#part(&_host) };
+                //     } else {
+                //         get = quote! { #get.#part() };
+                //     }
 
-    pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
-        Ok(match self {
-            Statement::Assign(path, expr) => {
-                let mark = path.mark();
-                let host = params.get(&mark).expect("No variable in params");
-                let value = expr.build(ctx, params)?;
-                let last = path.0.len() - 2;
-                let mut get = quote! { #mark.getters() };
-                let mut set = quote! { #mark.setters() };
-                for (idx, part) in path.0.iter().skip(1).enumerate() {
-                    let setter = format_ident!("set_{}", part);
-                    if idx == 0 {
-                        get = quote! { #get.#part(&_host) };
-                    } else {
-                        get = quote! { #get.#part() };
-                    }
-
-                    if idx == 0 && idx == last {
-                        set = quote! { #set.#setter(_host.as_mut(), _value) };
-                    } else if idx == last {
-                        set = quote! { #set.#setter(_value)};
-                    } else if idx == 0 {
-                        set = quote! { #set.#part(_host.as_mut()) };
-                    } else {
-                        set = quote! { #set.#part() };
-                    }
-                }
-                quote! {{
-                    let _value = (#value).into();
-                    let mut _host = #host.get_mut(#mark.entity).unwrap();
-                    if #get.into_value().as_ref() != &_value {
-                        #set
-                    }
-                }}
+                //     if idx == 0 && idx == last {
+                //         set = quote! { #set.#setter(_host.as_mut(), _value) };
+                //     } else if idx == last {
+                //         set = quote! { #set.#setter(_value)};
+                //     } else if idx == 0 {
+                //         set = quote! { #set.#part(_host.as_mut()) };
+                //     } else {
+                //         set = quote! { #set.#part() };
+                //     }
+                // }
+                // quote! {{
+                //     let _value = (#value).into();
+                //     let mut _host = #host.get_mut(#mark.entity).unwrap();
+                //     if #get.into_value().as_ref() != &_value {
+                //         #set
+                //     }
+                // }}
             }
             
-        })
+        }
     }
 }
 
@@ -394,70 +560,35 @@ impl Expr {
         flat.pop().unwrap().1
     }
 
-    pub fn fetch_params(&self, ctx: &EmlContext, params: &mut HandParams) -> syn::Result<()> {
-        match self {
-            Expr::Read(path) => {
-                let mark = path.mark();
-                let Some(input) = ctx.variables.get(&mark) else {
-                    throw!(mark, "Undefined input mark '{}'", mark.to_string());
-                };
-                params.add_input(mark, input.clone());
-                Ok(())
-            },
-            Expr::Format(expr, _) => expr.fetch_params(ctx, params),
-            Expr::Const(_) => Ok(()),
-            Expr::Add(left, right) |
-            Expr::Sub(left, right) |
-            Expr::Mul(left, right) |
-            Expr::Div(left, right) => {
-                left.fetch_params(ctx, params)?;
-                right.fetch_params(ctx, params)?;
-                Ok(())
-            },
-        }
-    }
-
-    pub fn build(&self, ctx: &EmlContext, params: &HashMap<Ident, Ident>) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &mut HandContext) -> syn::Result<TokenStream> {
         Ok(match self {
             Expr::Const(lit) => quote! { #lit },
             Expr::Format(expr, Format(lit)) => {
-                let expr = expr.build(ctx, params)?;
+                let expr = expr.build(ctx)?;
                 quote! { format!(#lit, #expr) }
             },
             Expr::Add(left, right) => {
-                let left = left.build(ctx, params)?;
-                let right = right.build(ctx, params)?;
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
                 quote! { #left + #right }
             },
             Expr::Sub(left, right) => {
-                let left = left.build(ctx, params)?;
-                let right = right.build(ctx, params)?;
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
                 quote! { #left - #right }
             },
             Expr::Mul(left, right) => {
-                let left = left.build(ctx, params)?;
-                let right = right.build(ctx, params)?;
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
                 quote! { #left * #right }
             },
             Expr::Div(left, right) => {
-                let left = left.build(ctx, params)?;
-                let right = right.build(ctx, params)?;
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
                 quote! { #left / #right }
             },
             Expr::Read(path) => {
-                let mark = path.mark();
-                let host = params.get(&mark).expect("Missing input param");
-                let mut resolve = quote! { };
-                for (idx, part) in path.0.iter().skip(1).enumerate() {
-                    if idx == 0 {
-                        resolve = quote! { #resolve.#part(#host.get(#mark.entity).unwrap()) };
-                    } else {
-                        resolve = quote! { #resolve.#part() };
-                    }
-                }
-                quote! {
-                    #mark.getters()#resolve.into_value().get()
-                }
+                ctx.read(path)?
             }
         })
 
