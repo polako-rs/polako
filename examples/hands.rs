@@ -32,25 +32,27 @@ fn main() {
 
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-    commands.add(eml! {
-        resource(time, Time);
-        bind(time.elapsed.fmt("{:0.2}") => elapsed.text);
-        bind(time.elapsed * 0.5 - 0.5 => content.bg.r);
-        bind(content.bg.hex => color.text);
-        Body + Name { .value: "body" } [
-            content: Column { .bg: #9d9d9d, .s.padding: [25, 50] }[
-                Div { .bg: #dedede, .s.padding: 50 } [
-                    "Hello world!"
-                ],
-                Row [
-                    "Elapsed: ", elapsed: Label { .text: "0.00" }
-                ],
-                Row [
-                    "Color: ", color: Label
+    commands.add(
+        eml! {
+            resource(time, Time);
+            Body {
+                .on.enter: () => {
+                    hello.text = "Hello, ";
+                },
+                .on.update: (e) => {
+                    delta.text = e.delta.fmt("Frame time: {:0.4}");
+                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
+                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
+                },
+            } [
+                Column [
+                    Row [ hello: Label { .text: "..., " }, "world!" ],
+                    delta: Label { .text: "0.0000" },
+                    elapsed: Label { .text: "0.00" },
                 ]
             ]
-        ]
-    });
+        }
+    );
 }
 
 #[derive(Element)]

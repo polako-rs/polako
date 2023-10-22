@@ -1240,6 +1240,7 @@ dependencies = [
 [[package]]
 name = "constructivism_macro_gen"
 version = "0.1.0"
+source = "git+https://github.com/polako-rs/constructivism#0e36fffa34d956bb4841ff574a3294866c9afa21"
 dependencies = [
  "quote",
  "syn 2.0.38",
@@ -1248,6 +1249,7 @@ dependencies = [
 [[package]]
 name = "constructivist"
 version = "0.0.1"
+source = "git+https://github.com/polako-rs/constructivism#0e36fffa34d956bb4841ff574a3294866c9afa21"
 dependencies = [
  "constructivism_macro_gen",
  "proc-macro2",

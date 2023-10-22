@@ -2,13 +2,13 @@ use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use bevy::{
     ecs::{
-        system::{Command, CommandQueue, SystemParam},
+        system::{Command, CommandQueue},
         world::EntityMut,
     },
     prelude::{*, Resource},
 };
 use polako_constructivism::{traits::Construct, *};
-use polako_flow::{ChangedEntities, Hand, OnDemandSignal, EnterSignal, UpdateSignal, ComponentChanges, NotifyChange};
+use polako_flow::{OnDemandSignal, EnterSignal, UpdateSignal, NotifyChange};
 
 #[cfg(test)]
 mod tests;

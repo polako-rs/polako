@@ -353,7 +353,7 @@ impl DeriveSignal {
 
                 pub fn assign<'w, S: ::bevy::ecs::system::SystemParam>(
                     &self,
-                    entity: ::bevy::ecs::world::EntityMut<'w>,
+                    entity: &mut ::bevy::ecs::world::EntityMut<'w>,
                     value: #flow::Hand<#ident, S>,
                 ) {
                     

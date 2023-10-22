@@ -366,6 +366,7 @@ impl EmlDirective {
         let eml = ctx.path("eml");
         Ok(match self {
             EmlDirective::Resource(ident, ty) => quote! {
+                #[allow(unused_variables)]
                 let #ident = #eml::ResourceMark::<#ty>::new();
             },
             _ => quote! { }

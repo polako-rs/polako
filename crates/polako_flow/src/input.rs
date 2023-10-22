@@ -1,9 +1,8 @@
 use polako_constructivism::Singleton;
 use polako_input::{PointerInput, PointerInputData, PointerInputPosition};
 use bevy::prelude::*;
-use bevy::ecs::system::SystemParam;
-use bevy::ecs::world::EntityMut;
-use super::{Signal, Hand};
+use super::Signal;
+
 macro_rules! impl_signal {
     ($variant:ident, $name:ident, $marker:ident) => {
         pub struct $name;
