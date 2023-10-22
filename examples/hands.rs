@@ -53,25 +53,33 @@ impl ElementBuilder for Label {
     }
 }
 
+#[derive(Default)]
+pub struct Dummy;
+
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(
         eml! {
             resource(time, Time);
-            Body {
-                .on.update: (e) => {
-                    delta.text = e.delta.fmt("Frame time: {:0.4}");
-                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
-                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
-                },
-            } [
-                Column [
+            Body [
+                Column {
+                    .on.enter: () => {
+                        info("Column enters.");
+                    },
+                    .on.update: (e) => {
+                        delta.text = e.delta.fmt("Frame time: {:0.4}");
+                        elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
+                        elapsed.bg.g = (time.elapsed - 2.) * 0.5;
+                        // info("Updated with delta = {:0.4}s", e.delta);
+                    },
+                } [
                     delta: Label { .text: "0.0000" },
                     elapsed: Label { .text: "0.00" },
                 ]
             ]
         }
     );
+
 }
 
 // Expanded `.on.update: () => { ... }`

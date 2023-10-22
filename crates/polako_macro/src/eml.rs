@@ -194,10 +194,10 @@ impl Parse for EmlParams {
         let mut common = vec![];
         let mut extended = vec![];
         while !input.is_empty() {
-            if input.fork().parse::<EmlParam>().is_ok() {
-                extended.push(input.parse()?);
-            } else {
+            if input.fork().parse::<Param<Variant>>().is_ok() {
                 common.push(input.parse()?);
+            } else {
+                extended.push(input.parse()?);
             }
             // if input.fork().parse::<Param<Variant>>().is_ok() {
             //     common.push(input.parse()?);

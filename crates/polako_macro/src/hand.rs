@@ -102,11 +102,16 @@ impl<'a> HandBuilder<'a> {
             let e = it.next().unwrap();
             throw!(e, "Unexpected extra hand argument.")
         };
+        let params = if items.is_empty() {
+            quote! { () }
+        } else {
+            quote! { ::bevy::ecs::system::ParamSet<(#items)> }
+        };
         Ok(quote! {
             #event: &_,
             _params: &mut ::bevy::ecs::system::StaticSystemParam<(
                 ::bevy::prelude::Commands,
-                ::bevy::ecs::system::ParamSet<(#items)>,
+                #params,
             )>
         })
     }
@@ -432,16 +437,123 @@ impl Parse for Format {
 }
 
 #[derive(Clone)]
+pub struct Args(Vec<Box<Expr>>);
+
+impl Args {
+    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+        let mut args = quote! { };
+        for e in self.0.iter() {
+            let arg = e.build(ctx)?;
+            args = quote! { #args #arg, }
+        }
+        Ok(args)
+    }
+}
+
+impl Parse for Args {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut args = vec![];
+        while input.fork().parse::<Expr>().is_ok() {
+            let arg = input.parse()?;
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+            args.push(arg)
+        }
+        Ok(Args(args))
+    }
+}
+
+
+#[derive(Clone)]
+pub enum LogStatement {
+    Debug(LitStr, Args),
+    Info(LitStr, Args),
+    Warn(LitStr, Args),
+    Error(LitStr, Args),
+}
+
+impl Parse for LogStatement {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<Ident>()?;
+        let args;
+        parenthesized!(args in input);
+        let format = args.parse()?;
+        if args.peek(Token![,]) {
+            args.parse::<Token![,]>()?;
+        }
+        let args = args.parse()?;
+        Ok(match ident.to_string().as_str() {
+            "debug" => LogStatement::Debug(format, args),
+            "info" => LogStatement::Info(format, args),
+            "warn" => LogStatement::Warn(format, args),
+            "error" => LogStatement::Error(format, args),
+            _ => {
+                throw!(ident, "Expected LogStatement");
+            },
+        })
+    }
+}
+
+impl LogStatement {
+    pub fn peek(input: &syn::parse::ParseStream) -> bool {
+        if input.peek(syn::Ident) && input.peek2(Paren) {
+            match input.fork().parse::<Ident>().unwrap().to_string().as_str() {
+                "debug" => true,
+                "info" => true,
+                "warn" => true,
+                "error" => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+        let (log, message, args) = match self {
+            LogStatement::Debug(message, args) => (
+                quote! { debug },
+                message,
+                args.build(ctx)?
+            ),
+            LogStatement::Info(message, args) => (
+                quote! { info },
+                message,
+                args.build(ctx)?
+            ),
+            LogStatement::Warn(message, args) => (
+                quote! { warn },
+                message,
+                args.build(ctx)?
+            ),
+            LogStatement::Error(message, args) => (
+                quote! { error },
+                message,
+                args.build(ctx)?
+            ),
+        };
+        Ok(quote! {
+            #log!(#message, #args);
+        })
+    }
+}
+
+#[derive(Clone)]
 pub enum Statement {
     Assign(Path, Expr),
+    Log(LogStatement),
 }
 
 impl Parse for Statement {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let path = input.parse()?;
-        input.parse::<Token![=]>()?;
-        let expr = input.parse()?;
-        Ok(Statement::Assign(path, expr))
+        Ok(if LogStatement::peek(&input) {
+            Statement::Log(input.parse()?)
+        } else {
+            let path = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let expr = input.parse()?;
+            Statement::Assign(path, expr)
+        })
     }
 }
 
@@ -451,39 +563,10 @@ impl Statement {
             Statement::Assign(path, expr) => {
                 let expr = expr.build(ctx)?;
                 ctx.write(path, expr)
-                // let mark = path.mark();
-                // let host = params.get(&mark).expect("No variable in params");
-                // let value = expr.build(ctx, params)?;
-                // let last = path.0.len() - 2;
-                // let mut get = quote! { #mark.getters() };
-                // let mut set = quote! { #mark.setters() };
-                // for (idx, part) in path.0.iter().skip(1).enumerate() {
-                //     let setter = format_ident!("set_{}", part);
-                //     if idx == 0 {
-                //         get = quote! { #get.#part(&_host) };
-                //     } else {
-                //         get = quote! { #get.#part() };
-                //     }
-
-                //     if idx == 0 && idx == last {
-                //         set = quote! { #set.#setter(_host.as_mut(), _value) };
-                //     } else if idx == last {
-                //         set = quote! { #set.#setter(_value)};
-                //     } else if idx == 0 {
-                //         set = quote! { #set.#part(_host.as_mut()) };
-                //     } else {
-                //         set = quote! { #set.#part() };
-                //     }
-                // }
-                // quote! {{
-                //     let _value = (#value).into();
-                //     let mut _host = #host.get_mut(#mark.entity).unwrap();
-                //     if #get.into_value().as_ref() != &_value {
-                //         #set
-                //     }
-                // }}
-            }
-            
+            },
+            Statement::Log(log) => {
+                log.build(ctx)
+            },
         }
     }
 }
@@ -663,20 +746,20 @@ impl From<&'static str> for Box<Expr> {
 
 impl Parse for Expr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut step = None;
+        let mut result = None;
         loop {
-            if input.is_empty() || input.peek(Token![;]) {
+            if input.is_empty() || input.peek(Token![;]) || input.peek(Token![,]) {
                 break;
             }
-            let Some(expr) = step else {
+            let Some(expr) = result else {
                 if input.peek(Lit) {
-                    step = Some(Expr::Const(input.parse()?));
+                    result = Some(Expr::Const(input.parse()?));
                 } else if input.peek(Paren) {
                     let group;
                     parenthesized!(group in input);
-                    step = Some(Expr::Group(Box::new(group.parse()?)));
+                    result = Some(Expr::Group(Box::new(group.parse()?)));
                 } else if input.fork().parse::<Path>().is_ok() {
-                    step = Some(Expr::Read(input.parse()?));
+                    result = Some(Expr::Read(input.parse()?));
                 } else {
                     throw!(input, "Not an hand expression");
                 }
@@ -685,36 +768,36 @@ impl Parse for Expr {
             if input.peek(Paren) {
                 let group;
                 parenthesized!(group in input);
-                step = Some(Expr::Group(Box::new(group.parse()?)));
+                result = Some(Expr::Group(Box::new(group.parse()?)));
                 continue;
             }
             if input.fork().parse::<Format>().is_ok() {
-                step = Some(Expr::Format(Box::new(expr), input.parse()?));
+                result = Some(Expr::Format(Box::new(expr), input.parse()?));
                 continue;
             }
             if input.peek(Token![*]) {
                 input.parse::<Token![*]>()?;
-                step = Some(Expr::Mul(Box::new(expr), Box::new(input.parse()?)));
+                result = Some(Expr::Mul(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             if input.peek(Token![/]) {
                 input.parse::<Token![/]>()?;
-                step = Some(Expr::Div(Box::new(expr), Box::new(input.parse()?)));
+                result = Some(Expr::Div(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             if input.peek(Token![+]) {
                 input.parse::<Token![+]>()?;
-                step = Some(Expr::Add(Box::new(expr), Box::new(input.parse()?)));
+                result = Some(Expr::Add(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             if input.peek(Token![-]) {
                 input.parse::<Token![-]>()?;
-                step = Some(Expr::Sub(Box::new(expr), Box::new(input.parse()?)));
+                result = Some(Expr::Sub(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             throw!(input, "Unexpected expression");
         }
-        if let Some(expr) = step {
+        if let Some(expr) = result {
             Ok(expr)
         } else {
             throw!(input, "Expected expression.");
