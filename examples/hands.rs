@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use bevy::ecs::system::StaticSystemParam;
 use bevy::prelude::*;
 use polako::eml::*;
@@ -28,33 +26,6 @@ fn main() {
         .run();
 }
 
-
-
-fn hello_world(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
-    commands.add(
-        eml! {
-            resource(time, Time);
-            Body {
-                .on.enter: () => {
-                    hello.text = "Hello, ";
-                },
-                .on.update: (e) => {
-                    delta.text = e.delta.fmt("Frame time: {:0.4}");
-                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
-                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
-                },
-            } [
-                Column [
-                    Row [ hello: Label { .text: "..., " }, "world!" ],
-                    delta: Label { .text: "0.0000" },
-                    elapsed: Label { .text: "0.00" },
-                ]
-            ]
-        }
-    );
-}
-
 #[derive(Element)]
 #[construct(Div -> Empty)]
 pub struct Div {
@@ -62,17 +33,8 @@ pub struct Div {
     /// The background color of element
     bg: Color,
 }
-impl ElementBuilder for Div {
-    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
-        blueprint! {
-            Div::Base
-            + NodeBundle
-            [[ content ]]
-        }
-    }
-}
 
-#[derive(Component, Behavior)]
+#[derive(Behavior)]
 pub struct UiText {
     /// The text value of UiText element.
     pub text: String,
@@ -87,6 +49,116 @@ impl ElementBuilder for Label {
     fn build_element(_: Vec<Entity>) -> Blueprint<Self> {
         blueprint! {
             Label::Base + TextBundle
+        }
+    }
+}
+
+fn hello_world(mut commands: Commands) {
+    commands.spawn(Camera2dBundle::default());
+    commands.add(
+        eml! {
+            resource(time, Time);
+            Body {
+                .on.update: (e) => {
+                    delta.text = e.delta.fmt("Frame time: {:0.4}");
+                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
+                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
+                },
+            } [
+                Column [
+                    delta: Label { .text: "0.0000" },
+                    elapsed: Label { .text: "0.00" },
+                ]
+            ]
+        }
+    );
+}
+
+// Expanded `.on.update: () => { ... }`
+use polako_eml::EntityMark;
+use polako_constructivism::*;
+fn _expand(world: &mut World) {
+    let mut __entity__ = world.spawn_empty();
+    let entity = __entity__.id();
+    let elapsed = EntityMark::<Label>::new(entity);
+    let delta = EntityMark::<Label>::new(entity);
+    let time = ResourceMark::<Time>::new();
+    
+    let __ext__ =  <<Body as Construct>::Design as Singleton>::instance().on().update();
+    __ext__.assign(&mut __entity__, move |
+        e: &_,                  // infers as &UpdateSignal
+        _params: &mut StaticSystemParam<(
+            Commands, ParamSet<(
+                Query<&mut _>,  // infers as Query<&mut UiText>
+                Res<_>,         // infers as Res<Time>
+                Query<&mut _>,  // infers as Query<&mut Div>
+            )> 
+        ,)>
+    |{
+        let (_commands,_params) =  ::std::ops::DerefMut::deref_mut(_params);
+        let _v_time_elapsed = {
+            let _host = _params.p1();
+            time.getters().elapsed(&_host).into_value().get()
+        };
+        let _v_delta_text = {
+            let _inset = _params.p0();
+            let _mut = _inset.get(delta.entity).unwrap();
+            let _host =  &_mut;
+            delta.getters().text(&_host).into_value().get()
+        };
+        let _v_e_delta = {
+            let _host = e;
+            e.getters().delta(&_host).into_value().get()
+        };
+        let _v_elapsed_text = {
+            let _inset = _params.p0();
+            let _mut = _inset.get(elapsed.entity).unwrap();
+            let _host =  &_mut;
+            elapsed.getters().text(&_host).into_value().get()
+        };
+        let _v_elapsed_bg_g = {
+            let _inset = _params.p2();
+            let _mut = _inset.get(elapsed.entity).unwrap();
+            let _host =  &_mut;
+            elapsed.getters().bg(&_host).g().into_value().get()
+        };
+        {
+            let _val = ({
+                let res = format!("Frame time: {:0.4}",_v_e_delta);
+                res
+            }).into();
+            if _v_delta_text!=_val {
+                delta.setters().set_text(_params.p0().get_mut(delta.entity).unwrap().as_mut(),_val);
+                delta.descriptor().text().notify_changed(_commands,delta.entity);
+            }
+        };
+        {
+            let _val = ({
+                let res = format!("Elapsed time: {:0.2}",_v_time_elapsed);
+                res
+            }).into();
+            if _v_elapsed_text != _val {
+                elapsed.setters().set_text(_params.p0().get_mut(elapsed.entity).unwrap().as_mut(),_val);
+                elapsed.descriptor().text().notify_changed(_commands,elapsed.entity);
+            }
+        };
+        {
+            let _val = ((_v_time_elapsed-2.)*0.5).into();
+            if _v_elapsed_bg_g != _val {
+                elapsed.setters().bg(_params.p2().get_mut(elapsed.entity).unwrap().as_mut()).set_g(_val);
+                elapsed.descriptor().bg().notify_changed(_commands,elapsed.entity);
+            }
+        };
+    });
+}
+
+
+impl ElementBuilder for Div {
+    fn build_element(content: Vec<Entity>) -> Blueprint<Self> {
+        blueprint! {
+            Div::Base
+            + NodeBundle
+            [[ content ]]
         }
     }
 }
@@ -191,7 +263,7 @@ pub struct Styles;
 impl Styles {
     /// The amount of space between the edges of a node and its contents in pixels.
     pub fn padding<T: IntoRect>(&self) -> StyleProperty<T> {
-        StyleProperty(|mut entity, padding| {
+        StyleProperty(|entity, padding| {
             let rect = padding.into_rect();
             if !entity.contains::<Style>() {
                 entity.insert(Style::default());

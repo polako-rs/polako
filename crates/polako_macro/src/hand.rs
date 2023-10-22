@@ -39,9 +39,9 @@ impl PartialEq for AccessPoint {
     fn eq(&self, other: &Self) -> bool {
         match (&self.mark.kind, &other.mark.kind) {
             (MarkKind::Entity, MarkKind::Entity) => {
-                self.mark.ident == other.mark.ident && self.prop == other.prop
+                self.mark.ty == other.mark.ty && self.prop == other.prop
             },
-            (MarkKind::Resource, MarkKind::Resource) => self.mark.ident == other.mark.ident,
+            (MarkKind::Resource, MarkKind::Resource) => self.mark.ty == other.mark.ty,
             _ => false
         }
     }

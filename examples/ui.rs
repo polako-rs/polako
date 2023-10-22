@@ -1,6 +1,3 @@
-use std::ops::DerefMut;
-
-use bevy::ecs::system::StaticSystemParam;
 use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
@@ -70,7 +67,7 @@ impl ElementBuilder for Div {
     }
 }
 
-#[derive(Component, Behavior)]
+#[derive(Behavior)]
 pub struct UiText {
     /// The text value of UiText element.
     pub text: String,
@@ -189,7 +186,7 @@ pub struct Styles;
 impl Styles {
     /// The amount of space between the edges of a node and its contents in pixels.
     pub fn padding<T: IntoRect>(&self) -> StyleProperty<T> {
-        StyleProperty(|mut entity, padding| {
+        StyleProperty(|entity, padding| {
             let rect = padding.into_rect();
             if !entity.contains::<Style>() {
                 entity.insert(Style::default());

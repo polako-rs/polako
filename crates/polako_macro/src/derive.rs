@@ -71,6 +71,9 @@ impl DeriveBehavior {
         }
         Ok(quote! {
             #segment
+            impl ::bevy::ecs::component::Component for #ident {
+                type Storage = ::bevy::ecs::component::TableStorage;
+            }
             impl #eml::IntoBundle for #ident {
                 type Output = Self;
                 fn into_bundle(self) -> Self::Output {
