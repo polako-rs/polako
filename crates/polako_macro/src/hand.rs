@@ -1,4 +1,4 @@
-use std::{fmt::Debug, collections::{HashMap, HashSet}};
+use std::{fmt::Debug, collections::{HashMap, HashSet}, hash::Hash};
 
 use constructivist::throw;
 use proc_macro2::{Ident, TokenStream};
@@ -27,72 +27,78 @@ use crate::eml::{EmlContext, Mark, MarkKind};
 /// )
 /// ```
 
-
-pub struct HandContext<'a> {
-    eml_context: &'a EmlContext,
-    p_inout: HashMap<Mark, u8>,
-    p_in: HashMap<Mark, u8>,
-    p_out: HashMap<Mark, u8>,
-    locals: HashSet<Ident>,
-    p_idx: u8,
-    access: HashSet<Path>,
+#[derive(Clone)]
+pub struct AccessPoint {
+    mark: Mark,
+    prop: Ident,
+    write: bool,
 }
 
-impl<'a> std::ops::Deref for HandContext<'a> {
-    type Target = EmlContext;
-    fn deref(&self) -> &Self::Target {
-        self.eml_context
+impl Eq for AccessPoint { }
+impl PartialEq for AccessPoint {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.mark.kind, &other.mark.kind) {
+            (MarkKind::Entity, MarkKind::Entity) => {
+                self.mark.ident == other.mark.ident && self.prop == other.prop
+            },
+            (MarkKind::Resource, MarkKind::Resource) => self.mark.ident == other.mark.ident,
+            _ => false
+        }
     }
 }
 
-impl<'a> HandContext<'a> {
+
+pub struct HandBuilder<'a> {
+    ctx: &'a EmlContext,
+    access: Vec<AccessPoint>,
+    reads: HashMap<Path, Option<usize>>,
+    args: HashSet<Ident>,
+}
+
+impl<'a> std::ops::Deref for HandBuilder<'a> {
+    type Target = EmlContext;
+    fn deref(&self) -> &Self::Target {
+        self.ctx
+    }
+}
+
+impl<'a> HandBuilder<'a> {
     pub fn new(eml_context: &'a EmlContext, locals: Vec<Ident>) -> Self {
-        HandContext { 
-            eml_context,
-            p_inout: HashMap::new(),
-            p_in: HashMap::new(),
-            p_out: HashMap::new(),
-            locals: locals.into_iter().collect(),
-            p_idx: 0,
-            access: HashSet::new()
+        HandBuilder { 
+            ctx: eml_context,
+            access: vec![],
+            reads: HashMap::new(),
+            args: locals.into_iter().collect()
         }
     }
     pub fn signature(&self) -> syn::Result<TokenStream> {
-        let mut params = self.p_inout.iter().chain(self.p_in.iter()).chain(self.p_out.iter()).collect::<Vec<_>>();
-        let flow = self.path("flow");
-        // std::cmp::PartialOrd::partial_cmp(&self, other)
-        params.sort_by_key(|(_, idx)| *idx);
         let mut items = quote! { };
-        let mut changes = quote! { };
-        for (mark, _) in params.iter() {
-            match mark.kind {
+        for point in self.access.iter() {
+            match point.mark.kind {
                 MarkKind::Entity => {
-                    if self.p_in.contains_key(&mark) {
-                        items = quote! { #items ::bevy::prelude::Query<& _>, };
-                        changes = quote! { #changes (), }
-                    } else {
+                    if point.write {
                         items = quote! { #items ::bevy::prelude::Query<&mut _>, };
-                        changes = quote! { #changes #flow::NotifyChange<_>, }
+                    } else {
+                        items = quote! { #items ::bevy::prelude::Query<& _>, };
                     }
                 },
                 MarkKind::Resource => {
-                    if self.p_in.contains_key(&mark) {
-                        items = quote! { #items ::bevy::prelude::Res<_>, };
-                    } else {
+                    if point.write {
                         items = quote! { #items ::bevy::prelude::ResMut<_>, };
+                    } else {
+                        items = quote! { #items ::bevy::prelude::Res<_>, };
                     }
-                    changes = quote! { #changes (), }
                 }
             }
         }
-        let event = if self.locals.is_empty() {
+        let event = if self.args.is_empty() {
             quote! { _event }
-        } else if self.locals.len() == 1 {
-            let mut it = self.locals.iter();
+        } else if self.args.len() == 1 {
+            let mut it = self.args.iter();
             let e = it.next().unwrap();
             quote! { #e }
         } else {
-            let mut it = self.locals.iter().skip(1);
+            let mut it = self.args.iter().skip(1);
             let e = it.next().unwrap();
             throw!(e, "Unexpected extra hand argument.")
         };
@@ -106,7 +112,7 @@ impl<'a> HandContext<'a> {
     }
     pub fn header(&self) -> syn::Result<TokenStream> {
         let mut header = quote! { };
-        for path in self.access.iter() {
+        for (path, idx) in self.reads.iter() {
             let ident = path.mark();
             let var = path.var();
             let mut get = quote! { #ident.getters() };
@@ -117,17 +123,18 @@ impl<'a> HandContext<'a> {
                     get = quote! { #get.#part() };
                 }
             }
-            if let Some(event) = self.locals.get(&ident) {
+            if let Some(event) = self.args.get(&ident) {
                 header = quote! { #header
                     let #var = {
-                        let _host = &#event;
+                        let _host = #event;
                         #get.into_value().get()
                     };
                 };
-            } else if let Some(mark) = self.variables.get(&ident) {
-                if let Some(idx) = self.p_in.get(&mark) {
-                    let param_idx = format_ident!("p{idx}");
-                    match mark.kind {
+            } else if let Some(idx) = idx {
+                let point = &self.access[*idx];
+                let param_idx = format_ident!("p{idx}");
+                if !point.write {
+                    match point.mark.kind {
                         MarkKind::Entity => {
                             header = quote! {
                                 #header
@@ -148,9 +155,8 @@ impl<'a> HandContext<'a> {
                             }
                         }
                     }
-                } else if let Some(idx) = self.p_out.get(&mark).or_else(|| self.p_inout.get(&mark)) {
-                    let param_idx = format_ident!("p{idx}");
-                    match mark.kind {
+                } else {
+                    match point.mark.kind {
                         MarkKind::Entity => {
                             header = quote! {
                                 #header
@@ -186,8 +192,8 @@ impl<'a> HandContext<'a> {
     }
     pub fn read(&mut self, path: &Path) -> syn::Result<TokenStream> {
         let ident = path.var();
-        self.add_input(&path)?;
-        self.access.insert(path.clone());
+        let idx = self.add_input(&path)?;
+        self.reads.insert(path.clone(), idx);
         Ok(quote! { #ident })
     }
     pub fn write(&mut self, path: &Path, value: TokenStream) -> syn::Result<TokenStream> {
@@ -211,7 +217,6 @@ impl<'a> HandContext<'a> {
                         _commands,
                         #mark_ident.entity
                     )
-                    // _changes.#param().send(#mark_ident.entity)
                 }
             },
             MarkKind::Resource => quote! {
@@ -232,10 +237,10 @@ impl<'a> HandContext<'a> {
                 set = quote! { #set.#part() };
             }
         }
-        self.access.insert(path.clone());
+        self.reads.insert(path.clone(), Some(idx));
         Ok(quote! {
             {
-                let _val = #value.into();
+                let _val = (#value).into();
                 if #ident != _val {
                     #set;
                     #notify_change;
@@ -244,42 +249,42 @@ impl<'a> HandContext<'a> {
         })
     }
 
-    pub fn add_input(&mut self, path: &Path) -> syn::Result<()> {
+    pub fn add_input(&mut self, path: &Path) -> syn::Result<Option<usize>> {
         let ident = path.mark();
-        if self.locals.contains(&ident) {
+        Ok(if self.args.contains(&ident) {
             // do nothing, this is an argument
-        } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
-            if self.p_inout.contains_key(&mark) {
-                // do nothing, already defined as in + out
-            } else if let Some(output) = self.p_out.remove(&mark) {
-                self.p_inout.insert(mark, output);
+            None
+        } else if let Some(mark) = self.ctx.variables.get(&ident).cloned() {
+            let point = AccessPoint { mark: mark.clone(), prop: path.prop(), write: false };
+            if let Some(idx) = self.access.iter().position(|p| p == &point) {
+                Some(idx)
             } else {
-                self.p_in.insert(mark, self.p_idx);
-                self.p_idx += 1;
+                let idx = self.access.len();
+                self.access.push(point);
+                Some(idx)
             }
         } else {
             throw!(ident, "Undefined mark");
-        };
-        Ok(())
+        })
     }
-    pub fn add_output(&mut self, path: &Path) -> syn::Result<(Mark, u8)> {
+    pub fn add_output(&mut self, path: &Path) -> syn::Result<(Mark, usize)> {
         let ident = path.mark();
-        if self.locals.contains(&ident) {
+        Ok(if self.args.contains(&ident) {
             throw!(ident, "Can't write to hand local mark");
-        } else if let Some(mark) = self.eml_context.variables.get(&ident).cloned() {
-            if let Some(idx) = self.p_inout.get(&mark) {
-                Ok((mark, *idx))
-            } else if let Some(output) = self.p_in.remove(&mark) {
-                self.p_inout.insert(mark.clone(), output);
-                Ok((mark, output))
+        } else if let Some(mark) = self.ctx.variables.get(&ident).cloned() {
+            let point = AccessPoint { mark: mark.clone(), prop: path.prop(), write: true };
+            if let Some(idx) = self.access.iter().position(|p| p == &point) {
+                self.access[idx].write = true;
+                (mark, idx)
             } else {
-                self.p_out.insert(mark.clone(), self.p_idx);
-                self.p_idx += 1;
-                Ok((mark, self.p_idx - 1))
+                let idx = self.access.len();
+                self.access.push(point);
+                (mark, idx)
             }
+            
         } else {
             throw!(ident, "Undefined mark");
-        }
+        })
     }
 }
 
@@ -313,7 +318,7 @@ impl Parse for Hand {
 
 impl Hand {
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
-        let mut ctx = HandContext::new(ctx, self.locals.clone());
+        let mut ctx = HandBuilder::new(ctx, self.locals.clone());
         let mut body = quote! { };
         for stmt in self.statements.iter() {
             let stmt = stmt.build(&mut ctx)?;
@@ -336,6 +341,10 @@ pub struct Path(Vec<Ident>);
 impl Path {
     pub fn mark(&self) -> Ident {
         self.0[0].clone()
+    }
+
+    pub fn prop(&self) -> Ident {
+        self.0[1].clone()
     }
 
     pub fn var(&self) -> Ident {
@@ -437,7 +446,7 @@ impl Parse for Statement {
 }
 
 impl Statement {
-    pub fn build(&self, ctx: &mut HandContext) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
         match self {
             Statement::Assign(path, expr) => {
                 let expr = expr.build(ctx)?;
@@ -575,7 +584,7 @@ impl Expr {
         flat.pop().unwrap().1
     }
 
-    pub fn build(&self, ctx: &mut HandContext) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
         Ok(match self {
             Expr::Const(lit) => quote! { #lit },
             Expr::Format(expr, Format(lit)) => {
