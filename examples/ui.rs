@@ -40,22 +40,18 @@ fn hello_world(mut commands: Commands) {
                     hello.text = "Hello, ";
                 },
                 .on.update: (e) => {
-                    delta.text = e.delta.fmt("{:0.4}");
-                    elapsed.text = time.elapsed.fmt("{:0.2}");
-                    elapsed.bg.g = time.elapsed * 0.2;
+                    delta.text = e.delta.fmt("Frame time: {:0.4}");
+                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
+                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
                 },
             } [
                 Column [
                     Row [ hello: Label { .text: "..., " }, "world!" ],
-                    Row [ "Frame time: ", delta: Label { .text: "0.0000" } ],
-                    Row [ "Elapsed time: ", elapsed: Label { .text: "0.00" } ],
+                    delta: Label { .text: "0.0000" },
+                    elapsed: Label { .text: "0.00" },
                 ]
             ]
         }
-        
-
-
-
     );
 
 

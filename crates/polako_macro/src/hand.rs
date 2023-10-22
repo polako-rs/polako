@@ -3,7 +3,7 @@ use std::{fmt::Debug, collections::{HashMap, HashSet}, hash::Hash};
 use constructivist::throw;
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
-use syn::{Lit, parse::Parse, Token, token, LitStr, parenthesized, parse2, braced};
+use syn::{Lit, parse::Parse, Token, token::{self, Paren}, LitStr, parenthesized, parse2, braced};
 
 use crate::eml::{EmlContext, Mark, MarkKind};
 
@@ -497,6 +497,7 @@ pub enum Expr {
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
+    Group(Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -611,6 +612,10 @@ impl Expr {
                 let right = right.build(ctx)?;
                 quote! { #left / #right }
             },
+            Expr::Group(group) => {
+                let group = group.build(ctx)?;
+                quote! { ( #group ) }
+            },
             Expr::Read(path) => {
                 ctx.read(path)?
             }
@@ -666,6 +671,10 @@ impl Parse for Expr {
             let Some(expr) = step else {
                 if input.peek(Lit) {
                     step = Some(Expr::Const(input.parse()?));
+                } else if input.peek(Paren) {
+                    let group;
+                    parenthesized!(group in input);
+                    step = Some(Expr::Group(Box::new(group.parse()?)));
                 } else if input.fork().parse::<Path>().is_ok() {
                     step = Some(Expr::Read(input.parse()?));
                 } else {
@@ -673,6 +682,12 @@ impl Parse for Expr {
                 }
                 continue;
             };
+            if input.peek(Paren) {
+                let group;
+                parenthesized!(group in input);
+                step = Some(Expr::Group(Box::new(group.parse()?)));
+                continue;
+            }
             if input.fork().parse::<Format>().is_ok() {
                 step = Some(Expr::Format(Box::new(expr), input.parse()?));
                 continue;
@@ -717,6 +732,7 @@ impl Debug for Expr {
             Expr::Sub(left, right) => format!("sub({:?}, {:?})", left, right),
             Expr::Mul(left, right) => format!("mul({:?}, {:?})", left, right),
             Expr::Div(left, right) => format!("div({:?}, {:?})", left, right),
+            Expr::Group(group) => format!("group({:?})", group),
         };
         f.write_str(&formatted)?;
         Ok(())
@@ -731,6 +747,9 @@ impl PartialEq for Expr {
                 let ca = ca.clone().into_token_stream().to_string();
                 let cb = cb.clone().into_token_stream().to_string();
                 ca == cb
+            },
+            (Expr::Group(group_a), Expr::Group(group_b)) => {
+                group_a == group_b
             },
             (Expr::Format(expr_a, fmt_a), Expr::Format(expr_b, fmt_b)) => {
                 expr_a == expr_b && fmt_a.0.value() == fmt_b.0.value()
@@ -782,6 +801,9 @@ mod test {
     fn read<S: AsRef<str>>(value: S) -> Expr {
         Expr::Read(Path(value.as_ref().split(".").map(|s| format_ident!("{s}")).collect()))
     }
+    fn group<G: Into<Box<Expr>>>(value: G) -> Expr {
+        Expr::Group(value.into())
+    }
     #[test]
     fn test_expr_basics() {
         assert_eq!(expr("a.b"), read("a.b"));
@@ -816,6 +838,14 @@ mod test {
         let e = expr("1 - 2 * 3 + 4");
         assert_eq!(e, add(
             sub(1, mul(2, 3)), 4
+        ));
+        let e = expr("(1 - 2) * 3 + 4");
+        assert_eq!(e, add(
+            mul(group(sub(1, 2)), 3), 4
+        ));
+        let e = expr("1 - 2 * (3 + 4)");
+        assert_eq!(e, sub(
+            1, mul(2, group(add(3, 4)))
         ));
         let e = expr("1 - 2 * 3 - 4");
         assert_eq!(e, sub(
