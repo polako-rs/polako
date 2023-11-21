@@ -3,7 +3,7 @@ use std::{fmt::Debug, collections::{HashMap, HashSet}, hash::Hash};
 use constructivist::throw;
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
-use syn::{Lit, parse::Parse, Token, token::{self, Paren}, LitStr, parenthesized, parse2, braced};
+use syn::{Lit, parse::{Parse, ParseBuffer}, Token, token::{self, Paren}, LitStr, parenthesized, parse2, braced};
 
 use crate::eml::{EmlContext, Mark, MarkKind};
 
@@ -309,10 +309,7 @@ impl Parse for Hand {
         Ok(Hand { locals, statements: if input.peek(token::Brace) {
             let stmts;
             braced!(stmts in input);
-            stmts
-                .parse_terminated(Statement::parse, Token![;])?
-                .into_iter()
-                .collect()
+            Statement::parse_multiple(&stmts)?
         } else {
             vec![
                 input.parse()?
@@ -542,22 +539,60 @@ impl LogStatement {
 pub enum Statement {
     Assign(Path, Expr),
     Log(LogStatement),
+    If(Expr, Vec<Statement>, Option<Box<Statement>>),
 }
 
 impl Parse for Statement {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // log
+        // info/warn/error/debug(...)
         Ok(if LogStatement::peek(&input) {
-            Statement::Log(input.parse()?)
+            let log = Statement::Log(input.parse()?);
+            input.parse::<Token![;]>()?;
+            log
+
+        // if
+        // if x > 0 { ... }
+        } else if input.peek(Token![if]) {
+            input.parse::<Token![if]>()?;
+            let expr = input.parse()?;
+            
+            let content;
+            braced!(content in input);
+            let stmts = Statement::parse_multiple(&content)?;
+            let then = if input.peek(Token![else]) {
+                input.parse::<Token![else]>()?;
+                let stmt = input.parse()?;
+                Some(Box::new(stmt))
+            } else {
+                None
+            };
+            Statement::If(expr, stmts, then)
+
+        // assign
+        // entity.prop = value
         } else {
             let path = input.parse()?;
             input.parse::<Token![=]>()?;
             let expr = input.parse()?;
+            input.parse::<Token![;]>()?;
             Statement::Assign(path, expr)
         })
     }
 }
 
 impl Statement {
+    pub fn parse_multiple<'a>(input: &ParseBuffer<'a>) -> syn::Result<Vec<Statement>> {
+        let mut stmts = vec![];
+        while !input.is_empty() {
+            stmts.push(input.parse()?);
+        }
+        if !input.is_empty() {
+            throw!(input, "Unexpected input.")
+        }
+        Ok(stmts)
+    }
+
     pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
         match self {
             Statement::Assign(path, expr) => {
@@ -567,6 +602,27 @@ impl Statement {
             Statement::Log(log) => {
                 log.build(ctx)
             },
+            Statement::If(condition, stmts, then) => {
+                let expr = condition.build(ctx)?;
+                let mut body = quote! { };
+                for stmt in stmts.iter() {
+                    let stmt = stmt.build(ctx)?;
+                    body = quote! { #stmt };
+                }
+                let then = if let Some(then) = then {
+                    let stmt = then.build(ctx)?;
+                    quote! { else #stmt }
+                } else {
+                    quote! { }
+                };
+                Ok(quote! { 
+                    if { #expr } {
+                        #body
+                    } #then
+                })
+
+
+            }
         }
     }
 }
@@ -581,6 +637,7 @@ pub enum Expr {
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Group(Box<Expr>),
+    Eq(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -701,7 +758,12 @@ impl Expr {
             },
             Expr::Read(path) => {
                 ctx.read(path)?
-            }
+            },
+            Expr::Eq(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left == #right }
+            },
         })
 
     }
@@ -748,7 +810,7 @@ impl Parse for Expr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut result = None;
         loop {
-            if input.is_empty() || input.peek(Token![;]) || input.peek(Token![,]) {
+            if input.is_empty() || input.peek(Token![;]) || input.peek(Token![,]) || input.peek(token::Brace) {
                 break;
             }
             let Some(expr) = result else {
@@ -795,6 +857,11 @@ impl Parse for Expr {
                 result = Some(Expr::Sub(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
+            if input.peek(Token![==]) {
+                input.parse::<Token![==]>()?;
+                result = Some(Expr::Eq(Box::new(expr), Box::new(input.parse()?)));
+                continue;
+            }
             throw!(input, "Unexpected expression");
         }
         if let Some(expr) = result {
@@ -816,6 +883,7 @@ impl Debug for Expr {
             Expr::Mul(left, right) => format!("mul({:?}, {:?})", left, right),
             Expr::Div(left, right) => format!("div({:?}, {:?})", left, right),
             Expr::Group(group) => format!("group({:?})", group),
+            Expr::Eq(left, right) => format!("{:?} == {:?}", left, right)
         };
         f.write_str(&formatted)?;
         Ok(())
