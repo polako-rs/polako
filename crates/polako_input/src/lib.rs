@@ -8,6 +8,16 @@ use bevy::{
 };
 use polako_constructivism::Construct;
 
+pub struct PolakoInputPlugin;
+
+impl Plugin for PolakoInputPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<PointerInput>();
+        app.add_systems(PreUpdate, bypass_filter_system);
+        app.add_systems(PreUpdate, pointer_input_system.after(bypass_filter_system));
+    }
+}
+
 #[derive(Construct, Default, Clone)]
 pub struct PointerInputPosition {
     abs: Vec2,
@@ -86,13 +96,26 @@ impl PointerInput {
 
 
 
-#[derive(Default)]
+#[derive(Default, Component, Clone, Copy, Debug)]
 pub enum PointerFilter {
     #[default]
     Default,
     Ignore,
     Pass,
     Block,
+}
+
+
+// derive_behaviour
+
+impl PointerFilter {
+    pub fn pointer_filter(&self) -> Self {
+        *self
+    }
+
+    pub fn set_pointer_filter(&mut self, value: Self) {
+        *self = value
+    }
 }
 
 #[derive(Component)]
@@ -120,6 +143,20 @@ pub struct PointerSystemState {
     press_position: Option<Vec2>,
     last_cursor_position: Option<Vec2>,
     dragging: bool,
+}
+
+pub fn bypass_filter_system(
+    nodes: Query<(Entity, &PointerFilter), Changed<PointerFilter>>,
+    mut commands: Commands,
+) {
+    for (entity, filter) in nodes.iter() {
+        info!("Bypassing {filter:?} for {entity:?}");
+        match filter {
+            PointerFilter::Pass => commands.entity(entity).insert(ActivePointerFilter::Pass),
+            PointerFilter::Block => commands.entity(entity).insert(ActivePointerFilter::Block),
+            _ => commands.entity(entity).remove::<ActivePointerFilter>()
+        };
+    }
 }
 
 // pointer_input_system is the rewriten bevy's ui_focus_system
@@ -296,6 +333,7 @@ pub fn pointer_input_system(
     }
 
     for entity in motion_entities.iter().copied() {
+        info!("sending PointerInput::hover event");
         events.send(PointerInput {
             entity,
             // TODO: do not forget about calculating screen/windown/viewport/relative position

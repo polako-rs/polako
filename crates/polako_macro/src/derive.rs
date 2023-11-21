@@ -236,6 +236,9 @@ impl DeriveElement {
                         <#signals_base as #cst::Singleton>::instance()
                     }
                 }
+                impl Signals {
+                    #signals
+                }
             }
 
         })

@@ -20,6 +20,7 @@ fn main() {
             ..default()
         }))
         .add_plugins(FlowPlugin)
+        .add_plugins(PolakoInputPlugin)
         .add_systems(Startup, hello_world)
         .add_systems(Update, ui_text_system)
         .add_systems(Update, div_system)
@@ -28,6 +29,16 @@ fn main() {
 
 #[derive(Element)]
 #[construct(Div -> Empty)]
+#[signals(
+    /// Emits when pointer enters the div's rect
+    hover: HoverSignal,
+
+    /// Emits when div become focused
+    focus: FocusSignal,
+
+    /// Emits when there is pointer motion on the top of the div
+    motion: MotionSignal,
+)]
 pub struct Div {
     #[prop(construct)]
     /// The background color of element
@@ -72,6 +83,9 @@ fn hello_world(mut commands: Commands) {
                         elapsed.bg.g = (time.elapsed - 2.) * 0.5;
                         // info("Updated with delta = {:0.4}s", e.delta);
                     },
+                    .on.motion: () => {
+                        info("motioning");
+                    }
                 } [
                     delta: Label { .text: "0.0000" },
                     elapsed: Label { .text: "0.00" },
@@ -260,7 +274,10 @@ impl DivDesign {
 }
 
 use polako_flow::input::HoverSignal;
+use polako_flow::input::FocusSignal;
+use polako_flow::input::MotionSignal;
 use polako_flow::Signal;
+use polako_input::PolakoInputPlugin;
 pub struct Signals;
 impl Signals {
     pub fn hover(&self) -> &'static <HoverSignal as Signal>::Descriptor {

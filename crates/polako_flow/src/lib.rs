@@ -844,7 +844,9 @@ fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
     mut params: StaticSystemParam<S>,
 ) {
     // let x = *params;
+    // info!("handling signals systems, num events: {}", reader.len());
     for (entity, event) in reader.iter().filter_map(|e| E::filter(e).map(|n| (n, e))) {
+        info!("handling event on {entity:?}");
         if let Ok(hands) = hands_query.get(entity) {
             hands.iter().for_each(|h| h.func.execute(event, &mut params));    
         }
@@ -880,7 +882,11 @@ impl<T: Event> OnDemandSignal<T> {
 // );
 
 impl OnDemandSignal<EnterSignal> {
-    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static>(&self, entity: &mut EntityMut<'w>, func: F) {
+    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static>(
+        &self,
+        entity: &mut EntityMut<'w>,
+        func: F
+    ) {
         let hand = Hand::new(func);
         if !entity.contains::<Hands<EnterSignal, S>>() {
             entity.insert((
@@ -888,7 +894,7 @@ impl OnDemandSignal<EnterSignal> {
                 FlowItem,
             ));
         } else {
-            entity.get_mut::<Hands<EnterSignal, S>>().unwrap().0.push(hand);
+            entity.get_mut::<Hands<EnterSignal, S>>().unwrap().push(hand);
         }
         let id = entity.id();
         entity.world_scope(|world| {

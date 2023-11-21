@@ -50,7 +50,7 @@ pub fn behaviour_derive(input: TokenStream) -> TokenStream {
     })
 }
 
-#[proc_macro_derive(Element, attributes(construct, param, prop))]
+#[proc_macro_derive(Element, attributes(construct, param, prop, signals))]
 pub fn element_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(match DeriveElement::build_from_derive(input) {

@@ -5,6 +5,7 @@ use super::Signal;
 
 macro_rules! impl_signal {
     ($variant:ident, $name:ident, $marker:ident) => {
+        // #[derive(Event)]
         pub struct $name;
         impl Signal for $name {
             type Event = PointerInput;
@@ -31,13 +32,25 @@ macro_rules! impl_signal {
                     })
             }
 
-            // pub fn assign<'w, S: SystemParam>(
-            //     &self,
-            //     _entity: &mut EntityMut<'w>,
-            //     _value: Hand<$name, S>,
-            // ) {
-                
-            // }
+            pub fn assign<'w, S: ::bevy::ecs::system::SystemParam + 'static, F: Fn(&<$name as $crate::Signal>::Event, &mut ::bevy::ecs::system::StaticSystemParam<S>) + 'static>(
+                &self,
+                entity: &mut ::bevy::ecs::world::EntityMut<'w>,
+                func: F
+            ) {
+                let hand = $crate::Hand::new(func);
+                if !entity.contains::<$crate::Hands<<$name as $crate::Signal>::Event , S>>() {
+                    entity.insert((
+                        $crate::Hands(vec![hand]),
+                        $crate::FlowItem
+                    ));
+                } else {
+                    entity.get_mut::<$crate::Hands<<$name as $crate::Signal>::Event, S>>().unwrap().push(hand);
+                }
+                entity.insert(::polako_input::PointerFilter::Pass);
+                entity.world_scope(|world| {
+                    world.resource::<$crate::FlowResource>().register_handle_signals_systems::<$name, S>();
+                });
+            }
         }
     };
 }
