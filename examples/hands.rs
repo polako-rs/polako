@@ -80,7 +80,7 @@ fn hello_world(mut commands: Commands) {
                     .on.update: (e) => {
                         if time.elapsed > 1. && time.elapsed <= 2. {
                             info("1..2");
-                        } else if time.elapsed < 1.0 {
+                        } else if -time.elapsed > -(1.0) {
                             info("< 1");
                         }
                         delta.text = e.delta.fmt("Frame time: {:0.4}");

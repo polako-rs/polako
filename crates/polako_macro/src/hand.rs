@@ -647,6 +647,8 @@ pub enum Expr {
     Div(Box<Expr>, Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
+    Neg(Box<Expr>),
+    Not(Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -689,7 +691,7 @@ impl Op {
         0..Op::Max.priority()
     }
 
-    pub fn into_expr(self, left: Expr, right: Expr) -> Expr {
+    pub fn into_binary_expr(self, left: Expr, right: Expr) -> Expr {
         match self {
             Op::Or => Expr::Or(left.into(), right.into()),
             Op::And => Expr::And(left.into(), right.into()),
@@ -768,7 +770,7 @@ impl Expr {
                 }
                 let (prev, left) = flat.remove(idx);
                 let (op, right) = flat.remove(idx);
-                flat.insert(idx, (prev, op.into_expr(left, right)));
+                flat.insert(idx, (prev, op.into_binary_expr(left, right)));
             }
         }
         flat.pop().unwrap().1
@@ -848,6 +850,14 @@ impl Expr {
                 let right = right.build(ctx)?;
                 quote! { #left - #right }
             },
+            Expr::Neg(expr) => {
+                let expr = expr.build(ctx)?;
+                quote! { -#expr }
+            },
+            Expr::Not(expr) => {
+                let expr = expr.build(ctx)?;
+                quote! { !#expr }
+            }
         })
 
     }
@@ -900,6 +910,12 @@ impl Parse for Expr {
             let Some(expr) = result else {
                 if input.peek(Lit) {
                     result = Some(Expr::Const(input.parse()?));
+                } else if input.peek(Token![!]) {
+                    input.parse::<Token![!]>()?;
+                    result = Some(Expr::Not(input.parse()?));
+                } else if input.peek(Token![-]) {
+                    input.parse::<Token![-]>()?;
+                    result = Some(Expr::Neg(input.parse()?));
                 } else if input.peek(Paren) {
                     let group;
                     parenthesized!(group in input);
@@ -1010,6 +1026,8 @@ impl Debug for Expr {
             Expr::Div(left, right) => format!("div({:?}, {:?})", left, right),
             Expr::Add(left, right) => format!("add({:?}, {:?})", left, right),
             Expr::Sub(left, right) => format!("sub({:?}, {:?})", left, right),
+            Expr::Neg(expr) => format!("neg({:?})", expr),
+            Expr::Not(expr) => format!("not({:?})", expr),
         };
         f.write_str(&formatted)?;
         Ok(())
