@@ -539,7 +539,7 @@ impl LogStatement {
 pub enum Statement {
     Assign(Path, Expr),
     Log(LogStatement),
-    If(Expr, Vec<Statement>, Option<Box<Statement>>),
+    IfElse(Expr, Vec<Statement>, Option<Box<Statement>>),
 }
 
 impl Parse for Statement {
@@ -567,7 +567,7 @@ impl Parse for Statement {
             } else {
                 None
             };
-            Statement::If(expr, stmts, then)
+            Statement::IfElse(expr, stmts, then)
 
         // assign
         // entity.prop = value
@@ -602,7 +602,7 @@ impl Statement {
             Statement::Log(log) => {
                 log.build(ctx)
             },
-            Statement::If(condition, stmts, then) => {
+            Statement::IfElse(condition, stmts, then) => {
                 let expr = condition.build(ctx)?;
                 let mut body = quote! { };
                 for stmt in stmts.iter() {
@@ -632,31 +632,38 @@ pub enum Expr {
     Const(Lit),
     Format(Box<Expr>, Format),
     Read(Path),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
+    Group(Box<Expr>),
+    
+    // Expr
+    Eq(Box<Expr>, Box<Expr>),
+    Ne(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
-    Group(Box<Expr>),
-    Eq(Box<Expr>, Box<Expr>),
+    Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
-    Add,
-    Sub,
+    Eq,
+    Ne,
     Mul,
     Div,
+    Add,
+    Sub,
     Max,
 }
 
 impl Op {
     pub fn priority(&self) -> u8 {
         match self {
+            Self::Eq |
+            Self::Ne => 0,
             Self::Mul |
-            Self::Div => 0,
+            Self::Div => 1,
             Self::Add |
-            Self::Sub => 1,
-            Self::Max => 2
+            Self::Sub => 2,
+            Self::Max => 3
         }
     }
 
@@ -666,10 +673,12 @@ impl Op {
 
     pub fn into_expr(self, left: Expr, right: Expr) -> Expr {
         match self {
-            Op::Add => Expr::Add(left.into(), right.into()),
-            Op::Sub => Expr::Sub(left.into(), right.into()),
+            Op::Eq => Expr::Eq(left.into(), right.into()),
+            Op::Ne => Expr::Ne(left.into(), right.into()),
             Op::Mul => Expr::Mul(left.into(), right.into()),
             Op::Div => Expr::Div(left.into(), right.into()),
+            Op::Add => Expr::Add(left.into(), right.into()),
+            Op::Sub => Expr::Sub(left.into(), right.into()),
             Op::Max => panic!("Non-binary expression: {self:?}")
         }
     }
@@ -683,14 +692,14 @@ impl Expr {
         let mut op = Op::Max;
         while let Some(node) = root {
             (root, op) = match node {
-                Expr::Add(left, right) => {
+                Expr::Eq(left, right) => {
                     flat.push((op, *left));
-                    (Some(*right), Op::Add)
+                    (Some(*right), Op::Eq)
                 },
-                Expr::Sub(left, right) => {
+                Expr::Ne(left, right) => {
                     flat.push((op, *left));
-                    (Some(*right), Op::Sub)
-                },
+                    (Some(*right), Op::Ne)
+                }
                 Expr::Mul(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Mul)
@@ -698,6 +707,14 @@ impl Expr {
                 Expr::Div(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Div)
+                },
+                Expr::Add(left, right) => {
+                    flat.push((op, *left));
+                    (Some(*right), Op::Add)
+                },
+                Expr::Sub(left, right) => {
+                    flat.push((op, *left));
+                    (Some(*right), Op::Sub)
                 },
                 expr => {
                     flat.push((op, expr));
@@ -732,26 +749,6 @@ impl Expr {
                 let expr = expr.build(ctx)?;
                 quote! { format!(#lit, #expr) }
             },
-            Expr::Add(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
-                quote! { #left + #right }
-            },
-            Expr::Sub(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
-                quote! { #left - #right }
-            },
-            Expr::Mul(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
-                quote! { #left * #right }
-            },
-            Expr::Div(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
-                quote! { #left / #right }
-            },
             Expr::Group(group) => {
                 let group = group.build(ctx)?;
                 quote! { ( #group ) }
@@ -763,6 +760,31 @@ impl Expr {
                 let left = left.build(ctx)?;
                 let right = right.build(ctx)?;
                 quote! { #left == #right }
+            },
+            Expr::Ne(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left != #right }
+            },
+            Expr::Mul(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left * #right }
+            },
+            Expr::Div(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left / #right }
+            },
+            Expr::Add(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left + #right }
+            },
+            Expr::Sub(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left - #right }
             },
         })
 
@@ -862,6 +884,11 @@ impl Parse for Expr {
                 result = Some(Expr::Eq(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
+            if input.peek(Token![!=]) {
+                input.parse::<Token![!=]>()?;
+                result = Some(Expr::Ne(Box::new(expr), Box::new(input.parse()?)));
+                continue;
+            }
             throw!(input, "Unexpected expression");
         }
         if let Some(expr) = result {
@@ -878,12 +905,13 @@ impl Debug for Expr {
             Expr::Const(v) => format!("{}", v.clone().into_token_stream().to_string()),
             Expr::Read(path) => format!("read({})", path.to_string()),
             Expr::Format(expr, fmt) => format!("fmt({:?}, \"{}\")", expr, fmt.0.value()),
-            Expr::Add(left, right) => format!("add({:?}, {:?})", left, right),
-            Expr::Sub(left, right) => format!("sub({:?}, {:?})", left, right),
+            Expr::Group(group) => format!("group({:?})", group),
+            Expr::Eq(left, right) => format!("eq({:?}, {:?})", left, right),
+            Expr::Ne(left, right) => format!("ne({:?}, {:?})", left, right),
             Expr::Mul(left, right) => format!("mul({:?}, {:?})", left, right),
             Expr::Div(left, right) => format!("div({:?}, {:?})", left, right),
-            Expr::Group(group) => format!("group({:?})", group),
-            Expr::Eq(left, right) => format!("{:?} == {:?}", left, right)
+            Expr::Add(left, right) => format!("add({:?}, {:?})", left, right),
+            Expr::Sub(left, right) => format!("sub({:?}, {:?})", left, right),
         };
         f.write_str(&formatted)?;
         Ok(())
