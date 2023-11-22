@@ -635,6 +635,8 @@ pub enum Expr {
     Group(Box<Expr>),
     
     // Expr
+    Or(Box<Expr>, Box<Expr>),
+    And(Box<Expr>, Box<Expr>),
     Eq(Box<Expr>, Box<Expr>),
     Ne(Box<Expr>, Box<Expr>),
     Gt(Box<Expr>, Box<Expr>),
@@ -649,6 +651,8 @@ pub enum Expr {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
+    Or,
+    And,
     Eq,
     Ne,
     Gt,
@@ -665,17 +669,19 @@ pub enum Op {
 impl Op {
     pub fn priority(&self) -> u8 {
         match self {
+            Self::Or => 0,
+            Self::And => 1,
             Self::Eq |
             Self::Ne |
             Self::Gt |
             Self::Gte |
             Self::Lt |
-            Self::Lte => 0,
+            Self::Lte => 2,
             Self::Mul |
-            Self::Div => 1,
+            Self::Div => 3,
             Self::Add |
-            Self::Sub => 2,
-            Self::Max => 3
+            Self::Sub => 4,
+            Self::Max => 5
         }
     }
 
@@ -685,6 +691,8 @@ impl Op {
 
     pub fn into_expr(self, left: Expr, right: Expr) -> Expr {
         match self {
+            Op::Or => Expr::Or(left.into(), right.into()),
+            Op::And => Expr::And(left.into(), right.into()),
             Op::Eq => Expr::Eq(left.into(), right.into()),
             Op::Ne => Expr::Ne(left.into(), right.into()),
             Op::Gt => Expr::Gte(left.into(), right.into()),
@@ -708,6 +716,14 @@ impl Expr {
         let mut op = Op::Max;
         while let Some(node) = root {
             (root, op) = match node {
+                Expr::Or(left, right) => {
+                    flat.push((op, *left));
+                    (Some(*right), Op::Or)
+                },
+                Expr::And(left, right) => {
+                    flat.push((op, *left));
+                    (Some(*right), Op::And)
+                },
                 Expr::Eq(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Eq)
@@ -772,6 +788,16 @@ impl Expr {
             Expr::Read(path) => {
                 ctx.read(path)?
             },
+            Expr::Or(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left || #right }
+            },
+            Expr::And(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left && #right }
+            },
             Expr::Eq(left, right) => {
                 let left = left.build(ctx)?;
                 let right = right.build(ctx)?;
@@ -782,25 +808,25 @@ impl Expr {
                 let right = right.build(ctx)?;
                 quote! { #left != #right }
             },
-            Expr::Gt(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
-                quote! { #left > #right }
-            },
             Expr::Gte(left, right) => {
                 let left = left.build(ctx)?;
                 let right = right.build(ctx)?;
                 quote! { #left >= #right }
             },
-            Expr::Lt(left, right) => {
+            Expr::Gt(left, right) => {
                 let left = left.build(ctx)?;
                 let right = right.build(ctx)?;
-                quote! { #left < #right }
+                quote! { #left > #right }
             },
             Expr::Lte(left, right) => {
                 let left = left.build(ctx)?;
                 let right = right.build(ctx)?;
                 quote! { #left <= #right }
+            },
+            Expr::Lt(left, right) => {
+                let left = left.build(ctx)?;
+                let right = right.build(ctx)?;
+                quote! { #left < #right }
             },
             Expr::Mul(left, right) => {
                 let left = left.build(ctx)?;
@@ -925,14 +951,19 @@ impl Parse for Expr {
                 result = Some(Expr::Ne(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
+            if input.peek(Token![>=]) {
+                input.parse::<Token![>=]>()?;
+                result = Some(Expr::Gte(Box::new(expr), Box::new(input.parse()?)));
+                continue;
+            }
             if input.peek(Token![>]) {
                 input.parse::<Token![>]>()?;
                 result = Some(Expr::Gt(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
-            if input.peek(Token![>=]) {
-                input.parse::<Token![>=]>()?;
-                result = Some(Expr::Gte(Box::new(expr), Box::new(input.parse()?)));
+            if input.peek(Token![<=]) {
+                input.parse::<Token![<=]>()?;
+                result = Some(Expr::Lte(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             if input.peek(Token![<]) {
@@ -940,9 +971,14 @@ impl Parse for Expr {
                 result = Some(Expr::Lt(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
-            if input.peek(Token![<=]) {
-                input.parse::<Token![<=]>()?;
-                result = Some(Expr::Lte(Box::new(expr), Box::new(input.parse()?)));
+            if input.peek(Token![||]) {
+                input.parse::<Token![||]>()?;
+                result = Some(Expr::Or(Box::new(expr), Box::new(input.parse()?)));
+                continue;
+            }
+            if input.peek(Token![&&]) {
+                input.parse::<Token![&&]>()?;
+                result = Some(Expr::And(Box::new(expr), Box::new(input.parse()?)));
                 continue;
             }
             throw!(input, "Unexpected expression");
@@ -962,6 +998,8 @@ impl Debug for Expr {
             Expr::Read(path) => format!("read({})", path.to_string()),
             Expr::Format(expr, fmt) => format!("fmt({:?}, \"{}\")", expr, fmt.0.value()),
             Expr::Group(group) => format!("group({:?})", group),
+            Expr::Or(left, right) => format!("or({:?}, {:?})", left, right),
+            Expr::And(left, right) => format!("and({:?}, {:?})", left, right),
             Expr::Eq(left, right) => format!("eq({:?}, {:?})", left, right),
             Expr::Ne(left, right) => format!("ne({:?}, {:?})", left, right),
             Expr::Gt(left, right) => format!("gt({:?}, {:?})", left, right),
