@@ -78,10 +78,10 @@ fn hello_world(mut commands: Commands) {
                         info("Column enters.");
                     },
                     .on.update: (e) => {
-                        if time.elapsed.fmt("{:0.0}") == "2" {
-                            info("At 2 secs");
-                        } else if time.elapsed.fmt("{:0.0}") != "3" {
-                            info("Not at 3 secs");
+                        if time.elapsed > 2. {
+                            info("> 2");
+                        } else if time.elapsed < 1.0 {
+                            info("< 1");
                         }
                         delta.text = e.delta.fmt("Frame time: {:0.4}");
                         elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
