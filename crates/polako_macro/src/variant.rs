@@ -1,4 +1,4 @@
-use constructivist::{proc::{Value, ContextLike}, throw};
+use constructivist::{proc::{Value, ContextLike, Ref}, throw};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{
@@ -52,10 +52,10 @@ impl ContextLike for EmlContext {
 }
 impl Value for Variant {
     type Context = EmlContext;
-    fn build(item: &Self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+    fn build(item: &Self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
         Ok(match item {
             Variant::Expr(e) => quote! { #e },
-            Variant::Color(c) => c.build(ctx)?,
+            Variant::Color(c) => c.build(ctx.clone())?,
             Variant::Hand(h) => h.build(ctx)?,
             Variant::Prop(_) => quote! {},
         })
@@ -133,7 +133,7 @@ impl Color {
             }
         }
     }
-    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
         let (r, g, b, a) = self.rgba()?;
         let bevy = ctx.path("bevy");
         Ok(quote!(#bevy::prelude::Color::rgba(#r, #g, #b, #a)))

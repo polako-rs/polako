@@ -31,7 +31,7 @@ pub trait ElementBuilder: Component + Construct + Sized {
 }
 
 /// Transforms (A, (B, (C, (D, ())))) into (A, ((), (C, ((), ())))
-/// where only A & C impl Bundle (and Component implictly)
+/// where only A & C impl Bundle (and Component implicitly)
 pub trait IntoBundle {
     type Output: Bundle;
     fn into_bundle(self) -> Self::Output;

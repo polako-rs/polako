@@ -8,6 +8,13 @@ pub struct Pressed {
     entity: Entity
 }
 
+#[derive(Signal)]
+pub struct TakeDamageSignal {
+    entity: Entity,
+    amount: f32,
+    kind: u8,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -38,6 +45,9 @@ fn main() {
 
     /// Emits when there is pointer motion on the top of the div
     motion: MotionSignal,
+
+    /// When damage taken
+    take_damage: TakeDamageSignal,
 )]
 pub struct Div {
     #[prop(construct)]
@@ -80,6 +90,7 @@ fn hello_world(mut commands: Commands) {
                     .on.update: (e) => {
                         if time.elapsed > 1. && time.elapsed <= 2. {
                             info("1..2");
+                            delta.take_damage.emit(.amount: time.elapsed);
                         } else if -time.elapsed > -(1.0) {
                             info("< 1");
                         }
@@ -92,7 +103,13 @@ fn hello_world(mut commands: Commands) {
                         info("motioning");
                     }
                 } [
-                    delta: Label { .text: "0.0000" },
+                    delta: Label { 
+                        .text: "0.0000",
+                        .on.take_damage: (e) => {
+                            info("taking damage {}", e.amount);
+                            // info("taking damage");
+                        }
+                    },
                     elapsed: Label { .text: "0.00" },
                 ]
             ]

@@ -1,4 +1,4 @@
-use constructivist::{prelude::*, throw};
+use constructivist::{prelude::*, throw, derive::ParamKind};
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, format_ident};
 use syn::{DeriveInput, spanned::Spanned, Field, Data, Attribute, parse::Parse, Token, Type, parse_quote};
@@ -253,6 +253,7 @@ impl DeriveElement {
 
 pub struct DeriveSignal {
     ident: Ident,
+    construct: DeriveConstruct,
     args: Option<(DeriveConstruct, Vec<Field>)>,
 }
 
@@ -267,7 +268,12 @@ impl DeriveSignal {
             .filter(|f| f.ident.is_some() && &f.ident.as_ref().unwrap().to_string() != "entity")
             .cloned()
             .collect();
+        let mut construct = DeriveConstruct::from_derive(input.clone())?;
         let mut input = DeriveConstruct::from_derive(input)?;
+        construct.params.iter_mut().filter(|p| &p.name.to_string() == "entity").for_each(|p| {
+            p.kind = ParamKind::Required
+        });
+        
         if !input.props.iter().any(|p| &p.ident.to_string() == "entity") {
             throw!(input.ty, "Missing required `entity` field");
         }
@@ -281,7 +287,7 @@ impl DeriveSignal {
         } else {
             Some((input, fields))
         };
-        Ok(DeriveSignal { ident, args })
+        Ok(DeriveSignal { ident, args, construct })
     }
 
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
@@ -324,13 +330,20 @@ impl DeriveSignal {
                 #args_construct
             }
         };
+        let construct = self.construct.build(&ctx.context)?;
         Ok(quote! {
+            #construct
             impl #flow::Signal for #ident {
                 type Event = Self;
                 type Args = #args_ty;
                 type Descriptor = #descriptor;
                 fn filter(event: &Self::Event) -> Option<::bevy::prelude::Entity> {
                     Some(event.entity)
+                }
+            }
+            impl #ident {
+                pub fn getters(&self) -> &'static <#ident as #cst::Construct>::Props<#cst::Get> {
+                    <<#ident as #cst::Construct>::Props<#cst::Get> as #cst::Singleton>::instance()
                 }
             }
             impl ::bevy::prelude::Event for #ident {
@@ -357,12 +370,20 @@ impl DeriveSignal {
                     world.resource_mut::<::bevy::prelude::Events<#ident>>().send(event);
                 }
 
-                pub fn assign<'w, S: ::bevy::ecs::system::SystemParam>(
+                pub fn assign<
+                    'w,
+                    S: ::bevy::ecs::system::SystemParam + 'static,
+                    F: Fn(&#ident, &mut ::bevy::ecs::system::StaticSystemParam<S>) + 'static
+                >(
                     &self,
                     entity: &mut ::bevy::ecs::world::EntityMut<'w>,
-                    value: #flow::Hand<#ident, S>,
+                    handler: F,
                 ) {
-                    
+                    entity.register_signal_handler::<#ident, S, F>(handler);
+                }
+
+                pub fn args(&self) -> &'static #cst::Constructor<<#ident as #flow::Signal>::Args> {
+                    #cst::Constructor::instance()
                 }
             }
         })

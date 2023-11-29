@@ -1,6 +1,6 @@
-use std::{fmt::Debug, collections::{HashMap, HashSet}, hash::Hash};
+use std::{fmt::Debug, collections::{HashMap, HashSet}};
 
-use constructivist::throw;
+use constructivist::{throw, proc::{ContextLike, Value, Construct, Ref, build, Params}};
 use proc_macro2::{Ident, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{Lit, parse::{Parse, ParseBuffer}, Token, token::{self, Paren}, LitStr, parenthesized, parse2, braced};
@@ -48,22 +48,29 @@ impl PartialEq for AccessPoint {
 }
 
 
-pub struct HandBuilder<'a> {
-    ctx: &'a EmlContext,
+pub struct HandBuilder {
+    ctx: Ref<EmlContext>,
     access: Vec<AccessPoint>,
     reads: HashMap<Path, Option<usize>>,
     args: HashSet<Ident>,
 }
 
-impl<'a> std::ops::Deref for HandBuilder<'a> {
-    type Target = EmlContext;
-    fn deref(&self) -> &Self::Target {
-        self.ctx
+impl ContextLike for HandBuilder {
+    fn path(&self, name: &'static str) -> TokenStream {
+        self.ctx.path(name)
     }
 }
 
-impl<'a> HandBuilder<'a> {
-    pub fn new(eml_context: &'a EmlContext, locals: Vec<Ident>) -> Self {
+
+impl std::ops::Deref for HandBuilder {
+    type Target = EmlContext;
+    fn deref(&self) -> &Self::Target {
+        &self.ctx
+    }
+}
+
+impl HandBuilder {
+    pub fn new(eml_context: Ref<EmlContext>, locals: Vec<Ident>) -> Self {
         HandBuilder { 
             ctx: eml_context,
             access: vec![],
@@ -319,26 +326,42 @@ impl Parse for Hand {
 }
 
 impl Hand {
-    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
-        let mut ctx = HandBuilder::new(ctx, self.locals.clone());
-        let mut body = quote! { };
-        for stmt in self.statements.iter() {
-            let stmt = stmt.build(&mut ctx)?;
-            body = quote! { #body #stmt; }
-        }
-        let signature = ctx.signature()?;
-        let header = ctx.header()?;
-        Ok(quote!{
-            move |#signature| {
-                #header
-                #body
+    pub fn build(&self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
+        build(
+            HandBuilder::new(ctx, self.locals.clone()),
+            move |ctx| {
+                let mut body = quote! { };
+                for stmt in self.statements.iter() {
+                    let stmt = stmt.build(ctx)?;
+                    body = quote! { #body #stmt; }
+                }
+                let signature = ctx.signature()?;
+                let header = ctx.header()?;
+                Ok(quote!{
+                    move |#signature| {
+                        #header
+                        #body
+                    }
+                })
             }
-        })
+        )
     }
 }
 
 #[derive(Clone, Eq)]
 pub struct Path(Vec<Ident>);
+
+impl std::ops::Deref for Path {
+    type Target = Vec<Ident>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for Path {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl Path {
     pub fn mark(&self) -> Ident {
@@ -437,10 +460,10 @@ impl Parse for Format {
 pub struct Args(Vec<Box<Expr>>);
 
 impl Args {
-    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
         let mut args = quote! { };
         for e in self.0.iter() {
-            let arg = e.build(ctx)?;
+            let arg = e.build(ctx.clone())?;
             args = quote! { #args #arg, }
         }
         Ok(args)
@@ -506,7 +529,7 @@ impl LogStatement {
             false
         }
     }
-    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
         let (log, message, args) = match self {
             LogStatement::Debug(message, args) => (
                 quote! { debug },
@@ -540,6 +563,7 @@ pub enum Statement {
     Assign(Path, Expr),
     Log(LogStatement),
     IfElse(Expr, Vec<Statement>, Option<Box<Statement>>),
+    Emit(Path, Expr)
 }
 
 impl Parse for Statement {
@@ -569,14 +593,30 @@ impl Parse for Statement {
             };
             Statement::IfElse(expr, stmts, then)
 
-        // assign
-        // entity.prop = value
         } else {
-            let path = input.parse()?;
-            input.parse::<Token![=]>()?;
-            let expr = input.parse()?;
-            input.parse::<Token![;]>()?;
-            Statement::Assign(path, expr)
+            let path = input.parse::<Path>()?;
+            // emit
+            // entity.signal.emit(.name: "hello", .value: "23")
+            if input.peek(Token![.]) && input.peek2(syn::Ident) && input.peek3(token::Paren) {//} && &path.last().unwrap().to_string() == "emit" {
+                input.parse::<Token![.]>()?;
+                let method = input.parse::<Ident>()?;
+                if &method.to_string() == "emit" {
+                    let params = Params::parenthesized(input)?;
+                    if input.peek(Token![;]) {
+                        input.parse::<Token![;]>()?;
+                    }
+                    Statement::Emit(path, Expr::Construct(Construct { ty: None, flattern: false, params }))
+                } else {
+                    throw!(method, "Only .emit(...) method supported");
+                }
+            // assign
+            // entity.prop = value
+            } else {    
+                input.parse::<Token![=]>()?;
+                let expr = input.parse()?;
+                input.parse::<Token![;]>()?;
+                Statement::Assign(path, expr)
+            }
         })
     }
 }
@@ -593,7 +633,7 @@ impl Statement {
         Ok(stmts)
     }
 
-    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+    pub fn build(&self, mut ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
         match self {
             Statement::Assign(path, expr) => {
                 let expr = expr.build(ctx)?;
@@ -603,14 +643,14 @@ impl Statement {
                 log.build(ctx)
             },
             Statement::IfElse(condition, stmts, then) => {
-                let expr = condition.build(ctx)?;
+                let expr = condition.build(ctx.clone())?;
                 let mut body = quote! { };
                 for stmt in stmts.iter() {
-                    let stmt = stmt.build(ctx)?;
+                    let stmt = stmt.build(ctx.clone())?;
                     body = quote! { #stmt };
                 }
                 let then = if let Some(then) = then {
-                    let stmt = then.build(ctx)?;
+                    let stmt = then.build(ctx.clone())?;
                     quote! { else #stmt }
                 } else {
                     quote! { }
@@ -620,8 +660,21 @@ impl Statement {
                         #body
                     } #then
                 })
-
-
+            },
+            Statement::Emit(path, expr) => {
+                let Expr::Construct(args) = expr else {
+                    throw!(path.last().unwrap(), "Non-construct arguments");
+                };
+                let mark = &path[0];
+                let signal = &path[1];
+                let args = args.build(ctx)?;
+                Ok(quote! {{
+                    let _descriptor = #mark.descriptor().#signal();
+                    let _args = _descriptor.args().construct(|fields, params| { #args });
+                    _commands.add(move |world: &mut ::bevy::prelude::World| {
+                        _descriptor.emit(world, #mark.entity, _args);
+                    });
+                }})
             }
         }
     }
@@ -633,6 +686,7 @@ pub enum Expr {
     Format(Box<Expr>, Format),
     Read(Path),
     Group(Box<Expr>),
+    Construct(Construct<Expr>),
     
     // Expr
     Or(Box<Expr>, Box<Expr>),
@@ -649,6 +703,13 @@ pub enum Expr {
     Sub(Box<Expr>, Box<Expr>),
     Neg(Box<Expr>),
     Not(Box<Expr>),
+}
+
+impl Value for Expr {
+    type Context = HandBuilder;
+    fn build(item: &Self, ctx: Ref<Self::Context>) -> syn::Result<TokenStream> {
+        Expr::build(&item, ctx)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -776,7 +837,7 @@ impl Expr {
         flat.pop().unwrap().1
     }
 
-    pub fn build(&self, ctx: &mut HandBuilder) -> syn::Result<TokenStream> {
+    pub fn build(&self, mut ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
         Ok(match self {
             Expr::Const(lit) => quote! { #lit },
             Expr::Format(expr, Format(lit)) => {
@@ -790,72 +851,75 @@ impl Expr {
             Expr::Read(path) => {
                 ctx.read(path)?
             },
+            Expr::Construct(cst) => {
+                cst.build(ctx)?
+            },
             Expr::Or(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left || #right }
             },
             Expr::And(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left && #right }
             },
             Expr::Eq(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left == #right }
             },
             Expr::Ne(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left != #right }
             },
             Expr::Gte(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left >= #right }
             },
             Expr::Gt(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left > #right }
             },
             Expr::Lte(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left <= #right }
             },
             Expr::Lt(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left < #right }
             },
             Expr::Mul(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left * #right }
             },
             Expr::Div(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left / #right }
             },
             Expr::Add(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left + #right }
             },
             Expr::Sub(left, right) => {
-                let left = left.build(ctx)?;
-                let right = right.build(ctx)?;
+                let left = left.build(ctx.clone())?;
+                let right = right.build(ctx.clone())?;
                 quote! { #left - #right }
             },
             Expr::Neg(expr) => {
-                let expr = expr.build(ctx)?;
+                let expr = expr.build(ctx.clone())?;
                 quote! { -#expr }
             },
             Expr::Not(expr) => {
-                let expr = expr.build(ctx)?;
+                let expr = expr.build(ctx.clone())?;
                 quote! { !#expr }
             }
         })
@@ -1014,6 +1078,7 @@ impl Debug for Expr {
             Expr::Read(path) => format!("read({})", path.to_string()),
             Expr::Format(expr, fmt) => format!("fmt({:?}, \"{}\")", expr, fmt.0.value()),
             Expr::Group(group) => format!("group({:?})", group),
+            Expr::Construct(_) => format!("construct(...)"),
             Expr::Or(left, right) => format!("or({:?}, {:?})", left, right),
             Expr::And(left, right) => format!("and({:?}, {:?})", left, right),
             Expr::Eq(left, right) => format!("eq({:?}, {:?})", left, right),

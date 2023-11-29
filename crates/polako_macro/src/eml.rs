@@ -14,14 +14,14 @@ use crate::{variant::Variant, exts::*};
 pub trait ParamsExt {
     fn build_patch(
         &self,
-        _: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         this: &TokenStream,
         patch_empty: bool,
     ) -> syn::Result<TokenStream>;
     fn build_construct(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         flattern: bool,
     ) -> syn::Result<TokenStream>;
@@ -30,7 +30,7 @@ pub trait ParamsExt {
 impl ParamsExt for Params<Variant> {
     fn build_patch(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         this: &TokenStream,
         patch_empty: bool,
@@ -41,7 +41,7 @@ impl ParamsExt for Params<Variant> {
         }
         for arg in self.items.iter() {
             let ident = &arg.ident;
-            let value = Variant::build(&arg.value, ctx)?;
+            let value = Variant::build(&arg.value, ctx.clone())?;
             // let value = Variant::build(, ctx)?;
             body = quote! { #body
                 __component__.#ident = #value.into();
@@ -58,16 +58,16 @@ impl ParamsExt for Params<Variant> {
     }
     fn build_construct(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         flattern: bool,
     ) -> syn::Result<TokenStream> {
         let construct = Construct {
             flattern,
-            ty: syn::parse2(quote! { #tag })?,
+            ty: Some(syn::parse2(quote! { #tag })?),
             params: self.clone(),
         };
-        construct.build(&ctx)
+        construct.build(ctx)
     }
 }
 
@@ -146,7 +146,7 @@ impl Parse for EmlParam {
 impl EmlParam {
     pub fn build_extension(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         entity: &TokenStream,
     ) -> syn::Result<TokenStream> {
@@ -182,8 +182,6 @@ impl EmlParam {
     }
 }
 
-// pub struct EmplParams(Vec<EmlParam>)
-
 pub struct EmlParams {
     common: Params<Variant>,
     extended: Vec<EmlParam>,
@@ -216,13 +214,13 @@ impl Parse for EmlParams {
 }
 
 impl EmlParams {
-    pub fn build_construct(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
+    pub fn build_construct(&self, ctx: Ref<EmlContext>, tag: &Ident) -> syn::Result<TokenStream> {
         self.common.build_construct(ctx, tag, false)
     }
 
     pub fn build_extensions(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         entity: &TokenStream,
     ) -> syn::Result<TokenStream> {
@@ -403,7 +401,7 @@ impl Parse for EmlDirective {
 
             },
             _ => {
-                throw!(ident, "Unknown dirrective");
+                throw!(ident, "Unknown directive");
             }
         })
     }
@@ -434,7 +432,7 @@ pub enum EmlContent {
 }
 
 impl EmlContent {
-    pub fn build(&self, ctx: &EmlContext, tag: &Ident) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>, tag: &Ident) -> syn::Result<TokenStream> {
         let cst = &ctx.path("constructivism");
         Ok(match self {
             EmlContent::Provided(ident) => quote! { #ident },
@@ -453,7 +451,7 @@ impl EmlContent {
                         }
                         EmlChild::Node(ch) => {
                             let span = ch.tag.span();
-                            let ct = ch.build(ctx, false)?;
+                            let ct = ch.build(ctx.clone(), false)?;
                             let assign = quote_spanned! { span=>
                                 let _: Implemented =
                                     <<#tag as #cst::Construct>::Design as #cst::Singleton>::instance()
@@ -501,7 +499,7 @@ impl Parse for EmlContent {
     }
 }
 
-// Patch component on current entity, everythinng after + in
+// Patch component on current entity, everything after + in
 // Div + Style(width: Val::Percent(100.))
 pub struct EmlPatch {
     pub ident: Ident,
@@ -517,7 +515,7 @@ impl Parse for EmlPatch {
 }
 
 impl EmlPatch {
-    pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>, this: &TokenStream) -> syn::Result<TokenStream> {
         self.items.build_patch(ctx, &self.ident, this, true)
     }
 }
@@ -542,8 +540,8 @@ impl Parse for EmlComponent {
 }
 
 impl EmlComponent {
-    pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
-        let construct = self.items.build_construct(ctx, &self.ident, false)?;
+    pub fn build(&self, ctx: Ref<EmlContext>, this: &TokenStream) -> syn::Result<TokenStream> {
+        let construct = self.items.build_construct(ctx.clone(), &self.ident, false)?;
         let cst = ctx.path("constructivism");
         Ok(quote! {
             world.entity_mut(#this).insert(#cst::Flattern::flattern(#construct));
@@ -581,16 +579,16 @@ impl Parse for EmlMixins {
 }
 
 impl EmlMixins {
-    pub fn build(&self, ctx: &EmlContext, this: &TokenStream) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>, this: &TokenStream) -> syn::Result<TokenStream> {
         let mut out = quote! {};
         for mixin in self.0.iter() {
             out = match mixin {
                 EmlMixin::Patch(patch) => {
-                    let patch = patch.build(ctx, this)?;
+                    let patch = patch.build(ctx.clone(), this)?;
                     quote! { #out #patch }
                 }
                 EmlMixin::Component(component) => {
-                    let construct = component.build(ctx, this)?;
+                    let construct = component.build(ctx.clone(), this)?;
                     quote! { #out #construct }
                 }
             };
@@ -686,7 +684,7 @@ impl EmlRoot {
             _ => Ok(()),
         }
     }
-    pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
         match self {
             EmlRoot::Base {
                 tag,
@@ -722,7 +720,7 @@ impl EmlRoot {
 
     fn build_super(
         &self,
-        ctx: &EmlContext,
+        ctx: Ref<EmlContext>,
         tag: &Ident,
         overrides: &Params<Variant>,
         mixins: &EmlMixins,
@@ -730,9 +728,9 @@ impl EmlRoot {
     ) -> syn::Result<TokenStream> {
         let eml = &ctx.path("eml");
         let cst = &ctx.path("constructivism");
-        let build_content = content.build(ctx, tag)?;
-        let apply_patches = overrides.build_patch(ctx, tag, &quote! { __root__ }, false)?;
-        let apply_mixins = mixins.build(ctx, &quote! { __root__ })?;
+        let build_content = content.build(ctx.clone(), tag)?;
+        let apply_patches = overrides.build_patch(ctx.clone(), tag, &quote! { __root__ }, false)?;
+        let apply_mixins = mixins.build(ctx.clone(), &quote! { __root__ })?;
 
         Ok(quote! {
             let __root_model__ = #eml::EntityMark::<#tag>::new(__root__);
@@ -788,11 +786,11 @@ impl EmlNode {
 
     }
 
-    pub fn build(&self, ctx: &EmlContext, as_root: bool) -> syn::Result<TokenStream> {
+    pub fn build(&self, ctx: Ref<EmlContext>, as_root: bool) -> syn::Result<TokenStream> {
         let tag = &self.tag;
         let eml = &ctx.path("eml");
-        let content = self.children.build(ctx, tag)?;
-        let construct = self.args.build_construct(ctx, tag)?;
+        let content = self.children.build(ctx.clone(), tag)?;
+        let construct = self.args.build_construct(ctx.clone(), tag)?;
         let model = if let Some(model) = &self.model {
             quote! {{
                 world.entity_mut(#model.entity).insert(#eml::IntoBundle::into_bundle(#construct));
@@ -809,7 +807,7 @@ impl EmlNode {
                 #eml::EntityMark::<#tag>::new(__entity__)
             }}
         };
-        let apply_mixins = self.mixins.build(ctx, &quote! { __model__.entity })?;
+        let apply_mixins = self.mixins.build(ctx.clone(), &quote! { __model__.entity })?;
         let apply_extensions = self
             .args
             .build_extensions(ctx, tag, &quote! { &mut __entity__ })?;
@@ -892,11 +890,11 @@ impl Parse for Eml {
         let span = input.span();
         let mut directives = vec![];
         loop {
-            let direcitve = input.parse::<EmlDirective>()?;
-            if direcitve.is_none() {
+            let directive = input.parse::<EmlDirective>()?;
+            if directive.is_none() {
                 break;
             }
-            directives.push(direcitve);
+            directives.push(directive);
         }
         let mut roots = vec![];
         for root in input.parse_terminated(EmlRoot::parse, Token![;])? {
@@ -939,110 +937,110 @@ impl Eml {
         let mut body = quote! {};
         let variables = self.fetch_variables()?;
         let mut root_ty = None;
-
-        let ctx = EmlContext {
+        build(EmlContext {
             variables,
             context: Context::new("polako"),
             strict: self.strict,
-        };
-        let eml = ctx.path("eml");
-        for (ident, variable) in ctx.variables.iter().filter(|v| v.1.is_entity() && !v.1.is_helper()) {
-            let entity = &variable.ident;
-            let tag = &variable.ty;
-            if ident == entity {
-                body = quote! { #body
-                    let #ident = world.spawn_empty().id();
-                    let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#ident);
-                }
-            } else {
-                body = quote! { #body
-                    let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#entity);
+        }, move |ctx| {
+            let eml = ctx.path("eml");
+            for (ident, variable) in ctx.variables.iter().filter(|v| v.1.is_entity() && !v.1.is_helper()) {
+                let entity = &variable.ident;
+                let tag = &variable.ty;
+                if ident == entity {
+                    body = quote! { #body
+                        let #ident = world.spawn_empty().id();
+                        let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#ident);
+                    }
+                } else {
+                    body = quote! { #body
+                        let #ident: #eml::EntityMark<#tag> = #eml::EntityMark::new(#entity);
+                    }
                 }
             }
-        }
-        for directive in self.directives.iter() {
-            let built_directive = directive.build(&ctx)?;
-            body = quote! { #body #built_directive };
-            let EmlDirective::Bind(bind) = directive else {
-                continue;
-            };
-            let mut from_path = bind.from.path.clone();
-            let from_var = from_path.remove(0);
-            let Some(from_var) = ctx.variables.get(&from_var) else {
-                throw!(from_var, "Undeclared variable {}", from_var.to_string());
-            };
-
-            let from_ty = &from_var.ty;
-            let from_prop = Prop {
-                root: parse_quote!(#from_ty),
-                path: from_path,
-            }.build(&ctx.context)?;
-            let from_prop = if let Some(map) = &bind.from.map {
-                let map = map.build(&ctx)?;
-                quote! { #from_prop.map(#map) }
-            } else {
-                from_prop
-            };
-            let from_bind = if from_var.is_entity() {
-                let ident = &from_var.ident;
-                quote! { #ident.entity.get(#from_prop) }
-            } else {
-                quote! { #from_prop.into() }
-            };
-
-            let mut to_path = bind.to.path.clone();
-            let to_var = to_path.remove(0);
-            let Some(to_var) = ctx.variables.get(&to_var) else {
-                throw!(to_var, "Undeclared variable {}", to_var.to_string());
-            };
-            let to_ty = &to_var.ty;
-            let to_prop = Prop {
-                root: parse_quote!(#to_ty),
-                path: to_path,
-            }.build(&ctx.context)?;
-            if let Some(map) = &bind.to.map {
-                throw!(map, "Bind target prop can't be mapped.");
+            for directive in self.directives.iter() {
+                let built_directive = directive.build(&ctx)?;
+                body = quote! { #body #built_directive };
+                let EmlDirective::Bind(bind) = directive else {
+                    continue;
+                };
+                let mut from_path = bind.from.path.clone();
+                let from_var = from_path.remove(0);
+                let Some(from_var) = ctx.variables.get(&from_var) else {
+                    throw!(from_var, "Undeclared variable {}", from_var.to_string());
+                };
+    
+                let from_ty = &from_var.ty;
+                let from_prop = Prop {
+                    root: parse_quote!(#from_ty),
+                    path: from_path,
+                }.build(&ctx.context)?;
+                let from_prop = if let Some(map) = &bind.from.map {
+                    let map = map.build(&ctx)?;
+                    quote! { #from_prop.map(#map) }
+                } else {
+                    from_prop
+                };
+                let from_bind = if from_var.is_entity() {
+                    let ident = &from_var.ident;
+                    quote! { #ident.entity.get(#from_prop) }
+                } else {
+                    quote! { #from_prop.into() }
+                };
+    
+                let mut to_path = bind.to.path.clone();
+                let to_var = to_path.remove(0);
+                let Some(to_var) = ctx.variables.get(&to_var) else {
+                    throw!(to_var, "Undeclared variable {}", to_var.to_string());
+                };
+                let to_ty = &to_var.ty;
+                let to_prop = Prop {
+                    root: parse_quote!(#to_ty),
+                    path: to_path,
+                }.build(&ctx.context)?;
+                if let Some(map) = &bind.to.map {
+                    throw!(map, "Bind target prop can't be mapped.");
+                }
+                if to_var.is_resource() {
+                    throw!(bind.to.path[0], "Resources can't be used as bind targets.");
+                }
+                let to_bind = {
+                    let ident = &to_var.ident;
+                    quote! { 
+                        #ident.entity.set(#to_prop)
+                    }
+                };
+                body = if from_var.is_entity() {
+                    quote! { #body
+                        world.bind_component_to_component(#from_bind, #to_bind);
+                    }
+                } else {
+                    quote! { #body
+                        world.bind_resource_to_component(#from_bind, #to_bind);
+                    }
+                };
             }
-            if to_var.is_resource() {
-                throw!(bind.to.path[0], "Resources can't be used as bind targets.");
+            for root in self.roots.iter() {
+                let build = root.build(ctx)?;
+                body = quote! {
+                    #body
+                    #build;
+                };
+                root_ty = Some(root.tag());
             }
-            let to_bind = {
-                let ident = &to_var.ident;
-                quote! { 
-                    #ident.entity.set(#to_prop)
-                }
+            let Some(root_ty) = root_ty else {
+                throw!(self.span, "Can't detect Eml exact type");
             };
-            body = if from_var.is_entity() {
-                quote! { #body
-                    world.bind_component_to_component(#from_bind, #to_bind);
-                }
+            let body = quote! {
+                #eml::Eml::<#root_ty>::new(move |world: &mut #bevy::World, __root__: #bevy::Entity| {
+                    let __this__ = __root__;
+                    #body
+                })
+            };
+            Ok(if self.strict {
+                quote! { #eml::Blueprint::new(#body) }
             } else {
-                quote! { #body
-                    world.bind_resource_to_component(#from_bind, #to_bind);
-                }
-            };
-        }
-        for root in self.roots.iter() {
-            let build = root.build(&ctx)?;
-            body = quote! {
-                #body
-                #build;
-            };
-            root_ty = Some(root.tag());
-        }
-        let Some(root_ty) = root_ty else {
-            throw!(self.span, "Can't detect Eml exact type");
-        };
-        let body = quote! {
-            #eml::Eml::<#root_ty>::new(move |world: &mut #bevy::World, __root__: #bevy::Entity| {
-                let __this__ = __root__;
-                #body
+                body
             })
-        };
-        Ok(if self.strict {
-            quote! { #eml::Blueprint::new(#body) }
-        } else {
-            body
         })
     }
 }

@@ -406,6 +406,9 @@ impl Flow {
     }
     fn register_handle_signals_systems<E: Signal, S: SystemParam + 'static>(&self) {
         self.registry.handle_signals.register::<(E, S), _>(|| {
+            self.edit_world(|world| {
+                world.init_resource::<Events<<E as Signal>::Event>>();
+            });
             self.edit_schedule(|schedule| {
                 schedule.add_systems(
                     handle_signals_system::<E, S>
@@ -430,6 +433,7 @@ pub trait WorldFlow {
         to: ComponentWriter<T, V>,
     );
 }
+
 impl WorldFlow for World {
     fn bind_component_to_component<S: Component, T: Component, V: Bindable>(
         &mut self,
@@ -492,6 +496,39 @@ impl WorldFlow for World {
         let flow = self.resource::<FlowResource>().clone();
         flow.register_resource_read_systems::<S, T, V>();
         flow.register_component_write_systems::<T, V>();
+    }
+}
+
+pub trait EntityFlow {
+    fn register_signal_handler<
+        E: Signal,
+        S: SystemParam + 'static,
+        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static
+    >(
+        &mut self, handler: F
+    );
+}
+
+impl<'w> EntityFlow for EntityMut<'w> {
+    fn register_signal_handler<
+        E: Signal,
+        S: SystemParam + 'static,
+        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static
+    >(
+        &mut self, handler: F
+    ) {
+        let hand = Hand::new(handler);
+        if !self.contains::<Hands<<E as Signal>::Event, S>>() {
+            self.insert((
+                Hands::from(hand),
+                FlowItem,
+            ));
+        } else {
+            self.get_mut::<Hands<<E as Signal>::Event, S>>().unwrap().push(hand);
+        }
+        self.world_scope(|world| {
+            world.resource::<FlowResource>().register_handle_signals_systems::<E, S>();
+        });
     }
 }
 
@@ -606,10 +643,6 @@ impl BindTargets {
         BindTargets(HashMap::new())
     }
 }
-
-// pub struct HandleChange<W: W V: Bindable> {
-//     handler:
-// }
 
 #[derive(Event)]
 struct ApplyChange<H: Component, V: Bindable> {
@@ -748,28 +781,10 @@ impl<H: 'static, V: Bindable> MapProp<H, V> for Prop<H, V> {
 pub trait Signal: Send + Sync + Sized + 'static {
     type Event: Event;
     type Descriptor: Singleton;
-    type Args: Construct;
+    type Args: Construct + 'static;
     fn filter(event: &Self::Event) -> Option<Entity>;
-    // fn emit(world: &mut World, entity: Entity, args: Self::Args);
-    // fn props(&self) -> &'static <Self::Args as Construct>::Props<Lookup> {
-    //     <<Self::Args as Construct>::Props<Lookup> as Singleton>::instance()
-    // }
-    // fn params(&self) -> &'static <Self::Args as Construct>::Params {
-    //     <<Self::Args as Construct>::Params as Singleton>::instance()
-    // }
 }
 
-// pub trait ConstructedEvent {
-//     type Getters;
-//     fn getters(&self) -> &'static Self::Getters;
-// }
-
-// impl<E: Construct + Event> ConstructedEvent for E {
-//     type Getters = <E as Construct>::Props<Get>;
-//     fn getters(&self) -> &'static Self::Getters {
-//         <<E as Construct>::Props<Get> as Singleton>::instance()
-//     }
-// }
 impl UpdateSignal {
     pub fn getters(&self) -> &'static <UpdateSignal as Construct>::Props<Get> {
         <<UpdateSignal as Construct>::Props<Get> as Singleton>::instance()
@@ -791,6 +806,11 @@ impl<E: Event, S: SystemParam + 'static> Handler<E, S> {
 pub struct Hands<E: Event, S: SystemParam + 'static>(Vec<Hand<E, S>>);
 unsafe impl<E: Event, S: SystemParam> Send for Hands<E, S> { }
 unsafe impl<E: Event, S: SystemParam> Sync for Hands<E, S> { }
+impl<E: Event, S: SystemParam + 'static> Hands<E, S> {
+    pub fn from(hand: Hand<E, S>) -> Self {
+        Hands(vec![hand])
+    }
+}
 pub struct Hand<E: Event, S: SystemParam + 'static> {
     func: Handler<E, S>,
 }
@@ -857,17 +877,43 @@ fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
 }
 
 
-#[derive(Signal)]
+#[derive(Event)]
 pub struct EnterSignal {
     pub entity: Entity
 }
 
-#[derive(Signal, Clone, Copy, Construct)]
+impl Signal for EnterSignal {
+    type Event = Self;
+    type Args = ();
+    type Descriptor = EnterSignalDescriptor;
+    fn filter(event: &Self::Event) -> Option<::bevy::prelude::Entity> {
+        Some(event.entity)
+    }
+}
+
+pub struct EnterSignalDescriptor;
+impl Singleton for EnterSignalDescriptor {
+    fn instance() -> &'static Self {
+        &EnterSignalDescriptor
+    }
+}
+
+#[derive(Event, Clone, Copy, Construct)]
 pub struct UpdateSignal {
     #[param(required)]
     pub entity: Entity,
     pub delta: f32,
 }
+
+impl crate::Signal for UpdateSignal {
+    type Event = Self;
+    type Args = ();
+    type Descriptor = ();
+    fn filter(event: &Self::Event) -> Option<::bevy::prelude::Entity> {
+        Some(event.entity)
+    }
+}
+
 pub struct OnDemandSignal<T: Event>(PhantomData<T>);
 
 impl<T: Event> OnDemandSignal<T> {
