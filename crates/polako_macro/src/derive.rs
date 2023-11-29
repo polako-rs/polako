@@ -1,7 +1,9 @@
-use constructivist::{prelude::*, throw, derive::ParamKind};
+use constructivist::{derive::ParamKind, prelude::*, throw};
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, format_ident};
-use syn::{DeriveInput, spanned::Spanned, Field, Data, Attribute, parse::Parse, Token, Type, parse_quote};
+use quote::{format_ident, quote};
+use syn::{
+    parse::Parse, parse_quote, spanned::Spanned, Attribute, Data, DeriveInput, Field, Token, Type,
+};
 
 use crate::eml::EmlContext;
 
@@ -56,7 +58,10 @@ impl DeriveBehavior {
         })
     }
     pub fn mod_ident(&self) -> syn::Result<Ident> {
-        Ok(Ident::new(&format!("{}_behavior", self.ident.to_string().to_lowercase()), self.ident.span()))
+        Ok(Ident::new(
+            &format!("{}_behavior", self.ident.to_string().to_lowercase()),
+            self.ident.span(),
+        ))
     }
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
         let cst = ctx.constructivism();
@@ -120,22 +125,22 @@ pub struct AssignedSignal {
 
 impl AssignedSignal {
     fn parse_terminated(input: syn::parse::ParseStream) -> syn::Result<Vec<Self>> {
-        Ok(input.parse_terminated(AssignedSignal::parse, Token![,])?.into_iter().collect())
+        Ok(input
+            .parse_terminated(AssignedSignal::parse, Token![,])?
+            .into_iter()
+            .collect())
     }
 
     pub fn from_derive(input: &DeriveInput) -> syn::Result<Vec<Self>> {
-        Ok(if let Some(attr) = input.attrs
-            .iter()
-            .find(|a| a.path().is_ident("signals"))
-        {
-            attr
-                .parse_args_with(AssignedSignal::parse_terminated)?
-                .into_iter()
-                .collect()
-        } else {
-            vec![]
-        })
-
+        Ok(
+            if let Some(attr) = input.attrs.iter().find(|a| a.path().is_ident("signals")) {
+                attr.parse_args_with(AssignedSignal::parse_terminated)?
+                    .into_iter()
+                    .collect()
+            } else {
+                vec![]
+            },
+        )
     }
 
     pub fn build_getter(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
@@ -172,7 +177,10 @@ pub struct DeriveElement {
 
 impl DeriveElement {
     pub fn mod_ident(&self) -> syn::Result<Ident> {
-        Ok(Ident::new(&format!("{}_element", self.ident.to_string().to_lowercase()), self.ident.span()))
+        Ok(Ident::new(
+            &format!("{}_element", self.ident.to_string().to_lowercase()),
+            self.ident.span(),
+        ))
     }
 
     pub fn from_derive(input: DeriveInput) -> syn::Result<Self> {
@@ -200,7 +208,7 @@ impl DeriveElement {
         let mut signals_base = quote! { <#base as #eml::Element>::Signals };
         for seg in self.construct.sequence.segments.iter() {
             signals_base = quote! { <#seg as #eml::Behavior>::Signals<#signals_base> }
-        };
+        }
         Ok(quote! {
             #construct
             impl ::bevy::ecs::component::Component for #ident {
@@ -250,7 +258,6 @@ impl DeriveElement {
     }
 }
 
-
 pub struct DeriveSignal {
     ident: Ident,
     construct: DeriveConstruct,
@@ -261,19 +268,25 @@ impl DeriveSignal {
     pub fn from_derive(input: DeriveInput) -> syn::Result<Self> {
         let ident = input.ident.clone();
         let Data::Struct(data) = &input.data else {
-            throw!(ident, "#[derive(Signal)] available only for structs with named fields.")
+            throw!(
+                ident,
+                "#[derive(Signal)] available only for structs with named fields."
+            )
         };
-        let fields = data.fields
+        let fields = data
+            .fields
             .iter()
             .filter(|f| f.ident.is_some() && &f.ident.as_ref().unwrap().to_string() != "entity")
             .cloned()
             .collect();
         let mut construct = DeriveConstruct::from_derive(input.clone())?;
         let mut input = DeriveConstruct::from_derive(input)?;
-        construct.params.iter_mut().filter(|p| &p.name.to_string() == "entity").for_each(|p| {
-            p.kind = ParamKind::Required
-        });
-        
+        construct
+            .params
+            .iter_mut()
+            .filter(|p| &p.name.to_string() == "entity")
+            .for_each(|p| p.kind = ParamKind::Required);
+
         if !input.props.iter().any(|p| &p.ident.to_string() == "entity") {
             throw!(input.ty, "Missing required `entity` field");
         }
@@ -287,7 +300,11 @@ impl DeriveSignal {
         } else {
             Some((input, fields))
         };
-        Ok(DeriveSignal { ident, args, construct })
+        Ok(DeriveSignal {
+            ident,
+            args,
+            construct,
+        })
     }
 
     pub fn build(&self, ctx: &EmlContext) -> syn::Result<TokenStream> {
@@ -297,8 +314,8 @@ impl DeriveSignal {
         let descriptor = format_ident!("{}Descriptor", ident);
         let (args_ty, args_body, args_def) = if let Some((args, fields)) = &self.args {
             let args_ty = &args.ty;
-            let mut body = quote! { };
-            let mut def = quote! { };
+            let mut body = quote! {};
+            let mut def = quote! {};
             for field in fields.iter() {
                 let Some(ident) = &field.ident else {
                     throw!(field, "Only named fields supported");
@@ -307,20 +324,12 @@ impl DeriveSignal {
                 body = quote! { #body #ident: args.#ident, };
                 def = quote! { #def #ident: #ty, };
             }
-            (
-                quote! { #args_ty },
-                body,
-                def,
-            )
+            (quote! { #args_ty }, body, def)
         } else {
-            (
-                quote!{ () },
-                quote! { },
-                quote! { },
-            )
+            (quote! { () }, quote! {}, quote! {})
         };
         let impl_args = if args_def.is_empty() {
-            quote! { }
+            quote! {}
         } else {
             let args_construct = self.args.as_ref().unwrap().0.build(&ctx.context)?;
             quote! {
@@ -387,7 +396,6 @@ impl DeriveSignal {
                 }
             }
         })
-
     }
 
     pub fn build_from_derive(input: DeriveInput) -> syn::Result<TokenStream> {

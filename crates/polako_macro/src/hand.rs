@@ -1,9 +1,21 @@
-use std::{fmt::Debug, collections::{HashMap, HashSet}};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
-use constructivist::{throw, proc::{ContextLike, Value, Construct, Ref, build, Params}};
+use constructivist::{
+    proc::{build, Construct, ContextLike, Params, Ref, Value},
+    throw,
+};
 use proc_macro2::{Ident, TokenStream};
-use quote::{ToTokens, format_ident, quote};
-use syn::{Lit, parse::{Parse, ParseBuffer}, Token, token::{self, Paren}, LitStr, parenthesized, parse2, braced};
+use quote::{format_ident, quote, ToTokens};
+use syn::{
+    braced, parenthesized,
+    parse::{Parse, ParseBuffer},
+    parse2,
+    token::{self, Paren},
+    Lit, LitStr, Token,
+};
 
 use crate::eml::{EmlContext, Mark, MarkKind};
 
@@ -15,7 +27,7 @@ use crate::eml::{EmlContext, Mark, MarkKind};
 ///     label.text = time.elapsed_seconds.fmt("{:0.2}");
 /// }
 /// ```
-/// 
+///
 /// ```ignore
 /// Resolves into ast:
 /// Statement::AssignToComponent(
@@ -34,19 +46,18 @@ pub struct AccessPoint {
     write: bool,
 }
 
-impl Eq for AccessPoint { }
+impl Eq for AccessPoint {}
 impl PartialEq for AccessPoint {
     fn eq(&self, other: &Self) -> bool {
         match (&self.mark.kind, &other.mark.kind) {
             (MarkKind::Entity, MarkKind::Entity) => {
                 self.mark.ty == other.mark.ty && self.prop == other.prop
-            },
+            }
             (MarkKind::Resource, MarkKind::Resource) => self.mark.ty == other.mark.ty,
-            _ => false
+            _ => false,
         }
     }
 }
-
 
 pub struct HandBuilder {
     ctx: Ref<EmlContext>,
@@ -61,7 +72,6 @@ impl ContextLike for HandBuilder {
     }
 }
 
-
 impl std::ops::Deref for HandBuilder {
     type Target = EmlContext;
     fn deref(&self) -> &Self::Target {
@@ -71,15 +81,15 @@ impl std::ops::Deref for HandBuilder {
 
 impl HandBuilder {
     pub fn new(eml_context: Ref<EmlContext>, locals: Vec<Ident>) -> Self {
-        HandBuilder { 
+        HandBuilder {
             ctx: eml_context,
             access: vec![],
             reads: HashMap::new(),
-            args: locals.into_iter().collect()
+            args: locals.into_iter().collect(),
         }
     }
     pub fn signature(&self) -> syn::Result<TokenStream> {
-        let mut items = quote! { };
+        let mut items = quote! {};
         for point in self.access.iter() {
             match point.mark.kind {
                 MarkKind::Entity => {
@@ -88,7 +98,7 @@ impl HandBuilder {
                     } else {
                         items = quote! { #items ::bevy::prelude::Query<& _>, };
                     }
-                },
+                }
                 MarkKind::Resource => {
                     if point.write {
                         items = quote! { #items ::bevy::prelude::ResMut<_>, };
@@ -123,7 +133,7 @@ impl HandBuilder {
         })
     }
     pub fn header(&self) -> syn::Result<TokenStream> {
-        let mut header = quote! { };
+        let mut header = quote! {};
         for (path, idx) in self.reads.iter() {
             let ident = path.mark();
             let var = path.var();
@@ -156,9 +166,9 @@ impl HandBuilder {
                                     #get.into_value().get()
                                 };
                             }
-                        },
+                        }
                         MarkKind::Resource => {
-                            header = quote! { 
+                            header = quote! {
                                 #header
                                 let #var = {
                                     let _host = _params.#param_idx();
@@ -179,9 +189,9 @@ impl HandBuilder {
                                     #get.into_value().get()
                                 };
                             }
-                        },
+                        }
                         MarkKind::Resource => {
-                            header = quote! { 
+                            header = quote! {
                                 #header
                                 let #var = {
                                     let _inset = _params.#param_idx();
@@ -200,7 +210,7 @@ impl HandBuilder {
         })
     }
     pub fn footer(&self) -> syn::Result<TokenStream> {
-        Ok(quote! { })
+        Ok(quote! {})
     }
     pub fn read(&mut self, path: &Path) -> syn::Result<TokenStream> {
         let ident = path.var();
@@ -219,7 +229,7 @@ impl HandBuilder {
             },
             MarkKind::Resource => quote! {
                 _params.#param()
-            }
+            },
         };
         let notify_change = match mark.kind {
             MarkKind::Entity => {
@@ -230,10 +240,8 @@ impl HandBuilder {
                         #mark_ident.entity
                     )
                 }
-            },
-            MarkKind::Resource => quote! {
-
             }
+            MarkKind::Resource => quote! {},
         };
         let last = path.0.len() - 2;
         let mut set = quote! { #mark_ident.setters() };
@@ -267,7 +275,11 @@ impl HandBuilder {
             // do nothing, this is an argument
             None
         } else if let Some(mark) = self.ctx.variables.get(&ident).cloned() {
-            let point = AccessPoint { mark: mark.clone(), prop: path.prop(), write: false };
+            let point = AccessPoint {
+                mark: mark.clone(),
+                prop: path.prop(),
+                write: false,
+            };
             if let Some(idx) = self.access.iter().position(|p| p == &point) {
                 Some(idx)
             } else {
@@ -284,7 +296,11 @@ impl HandBuilder {
         Ok(if self.args.contains(&ident) {
             throw!(ident, "Can't write to hand local mark");
         } else if let Some(mark) = self.ctx.variables.get(&ident).cloned() {
-            let point = AccessPoint { mark: mark.clone(), prop: path.prop(), write: true };
+            let point = AccessPoint {
+                mark: mark.clone(),
+                prop: path.prop(),
+                write: true,
+            };
             if let Some(idx) = self.access.iter().position(|p| p == &point) {
                 self.access[idx].write = true;
                 (mark, idx)
@@ -293,7 +309,6 @@ impl HandBuilder {
                 self.access.push(point);
                 (mark, idx)
             }
-            
         } else {
             throw!(ident, "Undefined mark");
         })
@@ -311,40 +326,42 @@ impl Parse for Hand {
         let args;
         // throw!(input, "parsing hand");
         parenthesized!(args in input);
-        let locals = args.parse_terminated(Ident::parse, Token![,])?.iter().cloned().collect();
+        let locals = args
+            .parse_terminated(Ident::parse, Token![,])?
+            .iter()
+            .cloned()
+            .collect();
         input.parse::<Token![=>]>()?;
-        Ok(Hand { locals, statements: if input.peek(token::Brace) {
-            let stmts;
-            braced!(stmts in input);
-            Statement::parse_multiple(&stmts)?
-        } else {
-            vec![
-                input.parse()?
-            ]
-        }})
+        Ok(Hand {
+            locals,
+            statements: if input.peek(token::Brace) {
+                let stmts;
+                braced!(stmts in input);
+                Statement::parse_multiple(&stmts)?
+            } else {
+                vec![input.parse()?]
+            },
+        })
     }
 }
 
 impl Hand {
     pub fn build(&self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
-        build(
-            HandBuilder::new(ctx, self.locals.clone()),
-            move |ctx| {
-                let mut body = quote! { };
-                for stmt in self.statements.iter() {
-                    let stmt = stmt.build(ctx)?;
-                    body = quote! { #body #stmt; }
-                }
-                let signature = ctx.signature()?;
-                let header = ctx.header()?;
-                Ok(quote!{
-                    move |#signature| {
-                        #header
-                        #body
-                    }
-                })
+        build(HandBuilder::new(ctx, self.locals.clone()), move |ctx| {
+            let mut body = quote! {};
+            for stmt in self.statements.iter() {
+                let stmt = stmt.build(ctx)?;
+                body = quote! { #body #stmt; }
             }
-        )
+            let signature = ctx.signature()?;
+            let header = ctx.header()?;
+            Ok(quote! {
+                move |#signature| {
+                    #header
+                    #body
+                }
+            })
+        })
     }
 }
 
@@ -383,13 +400,22 @@ impl Path {
 
 impl<S: AsRef<str>> From<Vec<S>> for Path {
     fn from(value: Vec<S>) -> Self {
-        Path(value.into_iter().map(|s| format_ident!("{}", s.as_ref())).collect())
+        Path(
+            value
+                .into_iter()
+                .map(|s| format_ident!("{}", s.as_ref()))
+                .collect(),
+        )
     }
 }
 
 impl ToString for Path {
     fn to_string(&self) -> String {
-        self.0.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(".")
+        self.0
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(".")
     }
 }
 
@@ -418,7 +444,7 @@ impl Parse for Path {
                 if parts.is_empty() {
                     throw!(input, "Expected Path");
                 } else {
-                    return Ok(Path(parts))
+                    return Ok(Path(parts));
                 }
             }
             if input.peek(Token![.]) {
@@ -461,7 +487,7 @@ pub struct Args(Vec<Box<Expr>>);
 
 impl Args {
     pub fn build(&self, ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
-        let mut args = quote! { };
+        let mut args = quote! {};
         for e in self.0.iter() {
             let arg = e.build(ctx.clone())?;
             args = quote! { #args #arg, }
@@ -483,7 +509,6 @@ impl Parse for Args {
         Ok(Args(args))
     }
 }
-
 
 #[derive(Clone)]
 pub enum LogStatement {
@@ -510,7 +535,7 @@ impl Parse for LogStatement {
             "error" => LogStatement::Error(format, args),
             _ => {
                 throw!(ident, "Expected LogStatement");
-            },
+            }
         })
     }
 }
@@ -531,26 +556,10 @@ impl LogStatement {
     }
     pub fn build(&self, ctx: Ref<HandBuilder>) -> syn::Result<TokenStream> {
         let (log, message, args) = match self {
-            LogStatement::Debug(message, args) => (
-                quote! { debug },
-                message,
-                args.build(ctx)?
-            ),
-            LogStatement::Info(message, args) => (
-                quote! { info },
-                message,
-                args.build(ctx)?
-            ),
-            LogStatement::Warn(message, args) => (
-                quote! { warn },
-                message,
-                args.build(ctx)?
-            ),
-            LogStatement::Error(message, args) => (
-                quote! { error },
-                message,
-                args.build(ctx)?
-            ),
+            LogStatement::Debug(message, args) => (quote! { debug }, message, args.build(ctx)?),
+            LogStatement::Info(message, args) => (quote! { info }, message, args.build(ctx)?),
+            LogStatement::Warn(message, args) => (quote! { warn }, message, args.build(ctx)?),
+            LogStatement::Error(message, args) => (quote! { error }, message, args.build(ctx)?),
         };
         Ok(quote! {
             #log!(#message, #args);
@@ -563,7 +572,7 @@ pub enum Statement {
     Assign(Path, Expr),
     Log(LogStatement),
     IfElse(Expr, Vec<Statement>, Option<Box<Statement>>),
-    Emit(Path, Expr)
+    Emit(Path, Expr),
 }
 
 impl Parse for Statement {
@@ -580,7 +589,7 @@ impl Parse for Statement {
         } else if input.peek(Token![if]) {
             input.parse::<Token![if]>()?;
             let expr = input.parse()?;
-            
+
             let content;
             braced!(content in input);
             let stmts = Statement::parse_multiple(&content)?;
@@ -592,12 +601,12 @@ impl Parse for Statement {
                 None
             };
             Statement::IfElse(expr, stmts, then)
-
         } else {
             let path = input.parse::<Path>()?;
             // emit
             // entity.signal.emit(.name: "hello", .value: "23")
-            if input.peek(Token![.]) && input.peek2(syn::Ident) && input.peek3(token::Paren) {//} && &path.last().unwrap().to_string() == "emit" {
+            if input.peek(Token![.]) && input.peek2(syn::Ident) && input.peek3(token::Paren) {
+                //} && &path.last().unwrap().to_string() == "emit" {
                 input.parse::<Token![.]>()?;
                 let method = input.parse::<Ident>()?;
                 if &method.to_string() == "emit" {
@@ -605,13 +614,20 @@ impl Parse for Statement {
                     if input.peek(Token![;]) {
                         input.parse::<Token![;]>()?;
                     }
-                    Statement::Emit(path, Expr::Construct(Construct { ty: None, flattern: false, params }))
+                    Statement::Emit(
+                        path,
+                        Expr::Construct(Construct {
+                            ty: None,
+                            flattern: false,
+                            params,
+                        }),
+                    )
                 } else {
                     throw!(method, "Only .emit(...) method supported");
                 }
             // assign
             // entity.prop = value
-            } else {    
+            } else {
                 input.parse::<Token![=]>()?;
                 let expr = input.parse()?;
                 input.parse::<Token![;]>()?;
@@ -638,13 +654,11 @@ impl Statement {
             Statement::Assign(path, expr) => {
                 let expr = expr.build(ctx)?;
                 ctx.write(path, expr)
-            },
-            Statement::Log(log) => {
-                log.build(ctx)
-            },
+            }
+            Statement::Log(log) => log.build(ctx),
             Statement::IfElse(condition, stmts, then) => {
                 let expr = condition.build(ctx.clone())?;
-                let mut body = quote! { };
+                let mut body = quote! {};
                 for stmt in stmts.iter() {
                     let stmt = stmt.build(ctx.clone())?;
                     body = quote! { #stmt };
@@ -653,14 +667,14 @@ impl Statement {
                     let stmt = then.build(ctx.clone())?;
                     quote! { else #stmt }
                 } else {
-                    quote! { }
+                    quote! {}
                 };
-                Ok(quote! { 
+                Ok(quote! {
                     if { #expr } {
                         #body
                     } #then
                 })
-            },
+            }
             Statement::Emit(path, expr) => {
                 let Expr::Construct(args) = expr else {
                     throw!(path.last().unwrap(), "Non-construct arguments");
@@ -687,7 +701,7 @@ pub enum Expr {
     Read(Path),
     Group(Box<Expr>),
     Construct(Construct<Expr>),
-    
+
     // Expr
     Or(Box<Expr>, Box<Expr>),
     And(Box<Expr>, Box<Expr>),
@@ -734,17 +748,10 @@ impl Op {
         match self {
             Self::Or => 0,
             Self::And => 1,
-            Self::Eq |
-            Self::Ne |
-            Self::Gt |
-            Self::Gte |
-            Self::Lt |
-            Self::Lte => 2,
-            Self::Mul |
-            Self::Div => 3,
-            Self::Add |
-            Self::Sub => 4,
-            Self::Max => 5
+            Self::Eq | Self::Ne | Self::Gt | Self::Gte | Self::Lt | Self::Lte => 2,
+            Self::Mul | Self::Div => 3,
+            Self::Add | Self::Sub => 4,
+            Self::Max => 5,
         }
     }
 
@@ -766,13 +773,12 @@ impl Op {
             Op::Div => Expr::Div(left.into(), right.into()),
             Op::Add => Expr::Add(left.into(), right.into()),
             Op::Sub => Expr::Sub(left.into(), right.into()),
-            Op::Max => panic!("Non-binary expression: {self:?}")
+            Op::Max => panic!("Non-binary expression: {self:?}"),
         }
     }
 }
 
 impl Expr {
-
     pub fn flattern(self) -> Vec<(Op, Expr)> {
         let mut root = Some(self);
         let mut flat = vec![];
@@ -782,15 +788,15 @@ impl Expr {
                 Expr::Or(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Or)
-                },
+                }
                 Expr::And(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::And)
-                },
+                }
                 Expr::Eq(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Eq)
-                },
+                }
                 Expr::Ne(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Ne)
@@ -798,19 +804,19 @@ impl Expr {
                 Expr::Mul(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Mul)
-                },
+                }
                 Expr::Div(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Div)
-                },
+                }
                 Expr::Add(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Add)
-                },
+                }
                 Expr::Sub(left, right) => {
                     flat.push((op, *left));
                     (Some(*right), Op::Sub)
-                },
+                }
                 expr => {
                     flat.push((op, expr));
                     (None, Op::Max)
@@ -843,87 +849,82 @@ impl Expr {
             Expr::Format(expr, Format(lit)) => {
                 let expr = expr.build(ctx)?;
                 quote! { format!(#lit, #expr) }
-            },
+            }
             Expr::Group(group) => {
                 let group = group.build(ctx)?;
                 quote! { ( #group ) }
-            },
-            Expr::Read(path) => {
-                ctx.read(path)?
-            },
-            Expr::Construct(cst) => {
-                cst.build(ctx)?
-            },
+            }
+            Expr::Read(path) => ctx.read(path)?,
+            Expr::Construct(cst) => cst.build(ctx)?,
             Expr::Or(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left || #right }
-            },
+            }
             Expr::And(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left && #right }
-            },
+            }
             Expr::Eq(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left == #right }
-            },
+            }
             Expr::Ne(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left != #right }
-            },
+            }
             Expr::Gte(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left >= #right }
-            },
+            }
             Expr::Gt(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left > #right }
-            },
+            }
             Expr::Lte(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left <= #right }
-            },
+            }
             Expr::Lt(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left < #right }
-            },
+            }
             Expr::Mul(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left * #right }
-            },
+            }
             Expr::Div(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left / #right }
-            },
+            }
             Expr::Add(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left + #right }
-            },
+            }
             Expr::Sub(left, right) => {
                 let left = left.build(ctx.clone())?;
                 let right = right.build(ctx.clone())?;
                 quote! { #left - #right }
-            },
+            }
             Expr::Neg(expr) => {
                 let expr = expr.build(ctx.clone())?;
                 quote! { -#expr }
-            },
+            }
             Expr::Not(expr) => {
                 let expr = expr.build(ctx.clone())?;
                 quote! { !#expr }
             }
         })
-
     }
 }
 
@@ -968,7 +969,11 @@ impl Parse for Expr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut result = None;
         loop {
-            if input.is_empty() || input.peek(Token![;]) || input.peek(Token![,]) || input.peek(token::Brace) {
+            if input.is_empty()
+                || input.peek(Token![;])
+                || input.peek(Token![,])
+                || input.peek(token::Brace)
+            {
                 break;
             }
             let Some(expr) = result else {
@@ -1099,7 +1104,6 @@ impl Debug for Expr {
     }
 }
 
-
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -1107,33 +1111,28 @@ impl PartialEq for Expr {
                 let ca = ca.clone().into_token_stream().to_string();
                 let cb = cb.clone().into_token_stream().to_string();
                 ca == cb
-            },
-            (Expr::Group(group_a), Expr::Group(group_b)) => {
-                group_a == group_b
-            },
+            }
+            (Expr::Group(group_a), Expr::Group(group_b)) => group_a == group_b,
             (Expr::Format(expr_a, fmt_a), Expr::Format(expr_b, fmt_b)) => {
                 expr_a == expr_b && fmt_a.0.value() == fmt_b.0.value()
-            },
-            (Expr::Read(path_a), Expr::Read(path_b)) => {
-                path_a == path_b
-            },
+            }
+            (Expr::Read(path_a), Expr::Read(path_b)) => path_a == path_b,
             (Expr::Add(left_a, right_a), Expr::Add(left_b, right_b)) => {
                 left_a == left_b && right_a == right_b
-            },
+            }
             (Expr::Mul(left_a, right_a), Expr::Mul(left_b, right_b)) => {
                 left_a == left_b && right_a == right_b
-            },
+            }
             (Expr::Sub(left_a, right_a), Expr::Sub(left_b, right_b)) => {
                 left_a == left_b && right_a == right_b
-            },
+            }
             (Expr::Div(left_a, right_a), Expr::Div(left_b, right_b)) => {
                 left_a == left_b && right_a == right_b
-            },
-            _ => false
+            }
+            _ => false,
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -1145,7 +1144,6 @@ mod test {
         expr.reduce()
     }
 
-    
     fn add<A: Into<Box<Expr>>, B: Into<Box<Expr>>>(a: A, b: B) -> Expr {
         Expr::Add(a.into(), b.into())
     }
@@ -1159,7 +1157,13 @@ mod test {
         Expr::Div(a.into(), b.into())
     }
     fn read<S: AsRef<str>>(value: S) -> Expr {
-        Expr::Read(Path(value.as_ref().split(".").map(|s| format_ident!("{s}")).collect()))
+        Expr::Read(Path(
+            value
+                .as_ref()
+                .split(".")
+                .map(|s| format_ident!("{s}"))
+                .collect(),
+        ))
     }
     fn group<G: Into<Box<Expr>>>(value: G) -> Expr {
         Expr::Group(value.into())
@@ -1176,7 +1180,6 @@ mod test {
         assert_eq!(expr("1 - 2"), sub(1, 2));
         assert_eq!(expr("1 * 2"), mul(1, 2));
         assert_eq!(expr("1 / 2"), div(1, 2));
-
     }
     #[test]
     fn test_expr_basic_op_priority() {
@@ -1185,64 +1188,36 @@ mod test {
         let e = expr("1 * 2 + 3");
         assert_eq!(e, add(mul(1, 2), 3));
         let e = expr("1 * 2 + 3 * 4");
-        assert_eq!(e, add(
-            mul(1, 2),
-            mul(3, 4),
-        ));
+        assert_eq!(e, add(mul(1, 2), mul(3, 4),));
         let e = expr("1 + 2 * 3 + 4");
-        assert_eq!(e, add(
-            add(1, mul(2, 3)), 4
-        ));
+        assert_eq!(e, add(add(1, mul(2, 3)), 4));
         let e = expr("1 - 2 + 3");
         assert_eq!(e, add(sub(1, 2), 3));
         let e = expr("1 - 2 * 3 + 4");
-        assert_eq!(e, add(
-            sub(1, mul(2, 3)), 4
-        ));
+        assert_eq!(e, add(sub(1, mul(2, 3)), 4));
         let e = expr("(1 - 2) * 3 + 4");
-        assert_eq!(e, add(
-            mul(group(sub(1, 2)), 3), 4
-        ));
+        assert_eq!(e, add(mul(group(sub(1, 2)), 3), 4));
         let e = expr("1 - 2 * (3 + 4)");
-        assert_eq!(e, sub(
-            1, mul(2, group(add(3, 4)))
-        ));
+        assert_eq!(e, sub(1, mul(2, group(add(3, 4)))));
         let e = expr("1 - 2 * 3 - 4");
-        assert_eq!(e, sub(
-            sub(1, mul(2, 3)), 4
-        ));
+        assert_eq!(e, sub(sub(1, mul(2, 3)), 4));
         let e = expr("1 * 2 - 3 * 4");
-        assert_eq!(e, sub(mul(1, 2), mul(3,4)));
+        assert_eq!(e, sub(mul(1, 2), mul(3, 4)));
         let e = expr("1 * 2 - 3 * 4 + 5 * 6");
-        assert_eq!(e, add(
-            sub(mul(1, 2), mul(3,4)),
-            mul(5, 6)
-        ));
+        assert_eq!(e, add(sub(mul(1, 2), mul(3, 4)), mul(5, 6)));
         // [1, 2, 3].iter().fo
         let e = expr("1 / 2 * 3");
         assert_eq!(e, mul(div(1, 2), 3));
         let e = expr("1 / 2 / 3");
         assert_eq!(e, div(div(1, 2), 3));
         let e = expr("1 * 2 * 3 + 4 * 5 * 6");
-        assert_eq!(e, add(
-            mul(mul(1, 2), 3),
-            mul(mul(4, 5), 6),
-        ));
+        assert_eq!(e, add(mul(mul(1, 2), 3), mul(mul(4, 5), 6),));
         let e = expr("1 / 2 * 3 + 4 / 5 * 6");
-        assert_eq!(e, add(
-            mul(div(1, 2), 3),
-            mul(div(4, 5), 6),
-        ));
+        assert_eq!(e, add(mul(div(1, 2), 3), mul(div(4, 5), 6),));
         let e = expr("1 / 2 / 3 + 4 / 5 / 6");
-        assert_eq!(e, add(
-            div(div(1, 2), 3),
-            div(div(4, 5), 6),
-        ));
+        assert_eq!(e, add(div(div(1, 2), 3), div(div(4, 5), 6),));
         let e = expr("1 - 2 / 3 / 4 - 5 / 6");
-        assert_eq!(e, sub(
-            sub(1, div(div(2, 3), 4)),
-            div(5, 6)
-        ));
+        assert_eq!(e, sub(sub(1, div(div(2, 3), 4)), div(5, 6)));
     }
     #[test]
     fn test_expr_prop_op_priority() {
@@ -1253,8 +1228,6 @@ mod test {
         let e = expr("a.b * 1 + b.c * 2");
         assert_eq!(e, add(mul(read("a.b"), 1), mul(read("b.c"), 2)));
         let e = expr("1 / 2 - a.b * 3 + 4");
-        assert_eq!(e, add(
-            sub(div(1, 2), mul(read("a.b"), 3)), 4
-        ));
+        assert_eq!(e, add(sub(div(1, 2), mul(read("a.b"), 3)), 4));
     }
 }

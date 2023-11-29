@@ -68,27 +68,26 @@ derive_construct! {
 }
 
 pub trait ColorProps {
-    fn get_hex(&self) -> String; 
+    fn get_hex(&self) -> String;
     fn set_hex(&mut self, hex: impl AsRef<str>);
 }
 impl ColorProps for Color {
     fn get_hex(&self) -> String {
         format!(
-          "{:02x}{:2x}{:02x}{:02x}",
-          (self.r().clamp(0., 1.) * 255.).round() as usize,
-          (self.g().clamp(0., 1.) * 255.).round() as usize,
-          (self.b().clamp(0., 1.) * 255.).round() as usize,
-          (self.a().clamp(0., 1.) * 255.).round() as usize,
+            "{:02x}{:2x}{:02x}{:02x}",
+            (self.r().clamp(0., 1.) * 255.).round() as usize,
+            (self.g().clamp(0., 1.) * 255.).round() as usize,
+            (self.b().clamp(0., 1.) * 255.).round() as usize,
+            (self.a().clamp(0., 1.) * 255.).round() as usize,
         )
     }
     fn set_hex(&mut self, hex: impl AsRef<str>) {
         let hex = hex.as_ref();
         *self = Color::hex(hex).unwrap_or_else(|_| {
-          info!("Cant parse '{hex}` as color, using WHITE.");
-          Color::WHITE
+            info!("Cant parse '{hex}` as color, using WHITE.");
+            Color::WHITE
         })
-  }
-
+    }
 }
 derive_construct! {
     seq => Color -> Nothing;

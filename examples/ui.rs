@@ -4,7 +4,7 @@ use polako::flow::*;
 
 #[derive(Signal)]
 pub struct Pressed {
-    entity: Entity
+    entity: Entity,
 }
 
 fn main() {
@@ -24,8 +24,6 @@ fn main() {
         .add_systems(Update, div_system)
         .run();
 }
-
-
 
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());

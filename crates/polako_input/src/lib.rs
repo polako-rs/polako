@@ -94,8 +94,6 @@ impl PointerInput {
     }
 }
 
-
-
 #[derive(Default, Component, Clone, Copy, Debug)]
 pub enum PointerFilter {
     #[default]
@@ -104,7 +102,6 @@ pub enum PointerFilter {
     Pass,
     Block,
 }
-
 
 // derive_behaviour
 
@@ -154,7 +151,7 @@ pub fn bypass_filter_system(
         match filter {
             PointerFilter::Pass => commands.entity(entity).insert(ActivePointerFilter::Pass),
             PointerFilter::Block => commands.entity(entity).insert(ActivePointerFilter::Block),
-            _ => commands.entity(entity).remove::<ActivePointerFilter>()
+            _ => commands.entity(entity).remove::<ActivePointerFilter>(),
         };
     }
 }

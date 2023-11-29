@@ -1,7 +1,7 @@
+use super::Signal;
+use bevy::prelude::*;
 use polako_constructivism::Singleton;
 use polako_input::{PointerInput, PointerInputData, PointerInputPosition};
-use bevy::prelude::*;
-use super::Signal;
 
 macro_rules! impl_signal {
     ($variant:ident, $name:ident, $marker:ident) => {
@@ -22,7 +22,12 @@ macro_rules! impl_signal {
             }
         }
         impl $marker {
-            pub fn emit(&self, world: &mut World, entity: Entity, position: <$name as Signal>::Args) {
+            pub fn emit(
+                &self,
+                world: &mut World,
+                entity: Entity,
+                position: <$name as Signal>::Args,
+            ) {
                 world
                     .get_resource_or_insert_with(Events::<PointerInput>::default)
                     .send(PointerInput {
@@ -32,23 +37,32 @@ macro_rules! impl_signal {
                     })
             }
 
-            pub fn assign<'w, S: ::bevy::ecs::system::SystemParam + 'static, F: Fn(&<$name as $crate::Signal>::Event, &mut ::bevy::ecs::system::StaticSystemParam<S>) + 'static>(
+            pub fn assign<
+                'w,
+                S: ::bevy::ecs::system::SystemParam + 'static,
+                F: Fn(
+                        &<$name as $crate::Signal>::Event,
+                        &mut ::bevy::ecs::system::StaticSystemParam<S>,
+                    ) + 'static,
+            >(
                 &self,
                 entity: &mut ::bevy::ecs::world::EntityMut<'w>,
-                func: F
+                func: F,
             ) {
                 let hand = $crate::Hand::new(func);
-                if !entity.contains::<$crate::Hands<<$name as $crate::Signal>::Event , S>>() {
-                    entity.insert((
-                        $crate::Hands(vec![hand]),
-                        $crate::FlowItem
-                    ));
+                if !entity.contains::<$crate::Hands<<$name as $crate::Signal>::Event, S>>() {
+                    entity.insert(($crate::Hands(vec![hand]), $crate::FlowItem));
                 } else {
-                    entity.get_mut::<$crate::Hands<<$name as $crate::Signal>::Event, S>>().unwrap().push(hand);
+                    entity
+                        .get_mut::<$crate::Hands<<$name as $crate::Signal>::Event, S>>()
+                        .unwrap()
+                        .push(hand);
                 }
                 entity.insert(::polako_input::PointerFilter::Pass);
                 entity.world_scope(|world| {
-                    world.resource::<$crate::FlowResource>().register_handle_signals_systems::<$name, S>();
+                    world
+                        .resource::<$crate::FlowResource>()
+                        .register_handle_signals_systems::<$name, S>();
                 });
             }
         }

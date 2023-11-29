@@ -1,4 +1,7 @@
-use constructivist::{proc::{Value, ContextLike, Ref}, throw};
+use constructivist::{
+    proc::{ContextLike, Ref, Value},
+    throw,
+};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{
@@ -9,7 +12,7 @@ use syn::{
     Expr, Ident, Token,
 };
 
-use crate::{hand::Hand, eml::EmlContext};
+use crate::{eml::EmlContext, hand::Hand};
 
 #[derive(Clone)]
 pub enum Variant {

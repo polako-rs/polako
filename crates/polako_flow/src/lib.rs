@@ -3,7 +3,10 @@ use std::{
 };
 
 use bevy::{
-    ecs::{system::{Command, SystemBuffer, SystemParam, StaticSystemParam}, world::EntityMut},
+    ecs::{
+        system::{Command, StaticSystemParam, SystemBuffer, SystemParam},
+        world::EntityMut,
+    },
     prelude::*,
     utils::{HashMap, HashSet},
 };
@@ -102,7 +105,6 @@ fn cleanup_on_demand_updates(
     for entity in removals.iter() {
         bypass_updates.remove(&entity);
     }
-
 }
 
 fn read_component_changes<S: Component, T: Component, V: Bindable>(
@@ -283,7 +285,6 @@ impl RegisteredSystems {
             handle_enters: HashCell(RefCell::new(HashSet::new())),
             handle_updates: HashCell(RefCell::new(HashSet::new())),
             handle_signals: HashCell(RefCell::new(HashSet::new())),
-
         }
     }
 }
@@ -385,9 +386,7 @@ impl Flow {
     fn register_handle_enter_systems<S: SystemParam + 'static>(&self) {
         self.registry.handle_enters.register::<S, _>(|| {
             self.edit_schedule(|schedule| {
-                schedule.add_systems(
-                    handle_enters::<S>.in_set(FlowSet::HandleSignals)
-                );
+                schedule.add_systems(handle_enters::<S>.in_set(FlowSet::HandleSignals));
             })
         })
     }
@@ -398,10 +397,9 @@ impl Flow {
                     handle_updates::<S>
                         .in_set(FlowSet::HandleSignals)
                         .after(handle_enters::<S>)
-                        .run_if(first_iteration)
+                        .run_if(first_iteration),
                 );
             });
-
         })
     }
     fn register_handle_signals_systems<E: Signal, S: SystemParam + 'static>(&self) {
@@ -413,7 +411,7 @@ impl Flow {
                 schedule.add_systems(
                     handle_signals_system::<E, S>
                         .in_set(FlowSet::HandleSignals)
-                        .after(handle_updates::<S>)
+                        .after(handle_updates::<S>),
                 );
             });
         });
@@ -503,9 +501,10 @@ pub trait EntityFlow {
     fn register_signal_handler<
         E: Signal,
         S: SystemParam + 'static,
-        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static
+        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static,
     >(
-        &mut self, handler: F
+        &mut self,
+        handler: F,
     );
 }
 
@@ -513,21 +512,23 @@ impl<'w> EntityFlow for EntityMut<'w> {
     fn register_signal_handler<
         E: Signal,
         S: SystemParam + 'static,
-        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static
+        F: Fn(&<E as Signal>::Event, &mut StaticSystemParam<S>) + 'static,
     >(
-        &mut self, handler: F
+        &mut self,
+        handler: F,
     ) {
         let hand = Hand::new(handler);
         if !self.contains::<Hands<<E as Signal>::Event, S>>() {
-            self.insert((
-                Hands::from(hand),
-                FlowItem,
-            ));
+            self.insert((Hands::from(hand), FlowItem));
         } else {
-            self.get_mut::<Hands<<E as Signal>::Event, S>>().unwrap().push(hand);
+            self.get_mut::<Hands<<E as Signal>::Event, S>>()
+                .unwrap()
+                .push(hand);
         }
         self.world_scope(|world| {
-            world.resource::<FlowResource>().register_handle_signals_systems::<E, S>();
+            world
+                .resource::<FlowResource>()
+                .register_handle_signals_systems::<E, S>();
         });
     }
 }
@@ -777,7 +778,6 @@ impl<H: 'static, V: Bindable> MapProp<H, V> for Prop<H, V> {
     }
 }
 
-
 pub trait Signal: Send + Sync + Sized + 'static {
     type Event: Event;
     type Descriptor: Singleton;
@@ -794,7 +794,6 @@ impl UpdateSignal {
     }
 }
 
-
 pub struct Handler<E: Event, S: SystemParam + 'static>(Box<dyn Fn(&E, &mut StaticSystemParam<S>)>);
 impl<E: Event, S: SystemParam + 'static> Handler<E, S> {
     pub fn execute<'w, 's>(&self, event: &E, params: &mut StaticSystemParam<S>) {
@@ -804,8 +803,8 @@ impl<E: Event, S: SystemParam + 'static> Handler<E, S> {
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Hands<E: Event, S: SystemParam + 'static>(Vec<Hand<E, S>>);
-unsafe impl<E: Event, S: SystemParam> Send for Hands<E, S> { }
-unsafe impl<E: Event, S: SystemParam> Sync for Hands<E, S> { }
+unsafe impl<E: Event, S: SystemParam> Send for Hands<E, S> {}
+unsafe impl<E: Event, S: SystemParam> Sync for Hands<E, S> {}
 impl<E: Event, S: SystemParam + 'static> Hands<E, S> {
     pub fn from(hand: Hand<E, S>) -> Self {
         Hands(vec![hand])
@@ -868,7 +867,9 @@ fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
     for (entity, event) in reader.iter().filter_map(|e| E::filter(e).map(|n| (n, e))) {
         info!("handling event on {entity:?}");
         if let Ok(hands) = hands_query.get(entity) {
-            hands.iter().for_each(|h| h.func.execute(event, &mut params));    
+            hands
+                .iter()
+                .for_each(|h| h.func.execute(event, &mut params));
         }
     }
     // for hands in hands_query.iter_many(reader.iter().filter_map(|e| E::filter(e))) {
@@ -876,10 +877,9 @@ fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
     // }
 }
 
-
 #[derive(Event)]
 pub struct EnterSignal {
-    pub entity: Entity
+    pub entity: Entity,
 }
 
 impl Signal for EnterSignal {
@@ -928,45 +928,64 @@ impl<T: Event> OnDemandSignal<T> {
 // );
 
 impl OnDemandSignal<EnterSignal> {
-    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static>(
+    pub fn assign<
+        'w,
+        S: SystemParam + 'static,
+        F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static,
+    >(
         &self,
         entity: &mut EntityMut<'w>,
-        func: F
+        func: F,
     ) {
         let hand = Hand::new(func);
         if !entity.contains::<Hands<EnterSignal, S>>() {
-            entity.insert((
-                Hands(vec![hand]),
-                FlowItem,
-            ));
+            entity.insert((Hands(vec![hand]), FlowItem));
         } else {
-            entity.get_mut::<Hands<EnterSignal, S>>().unwrap().push(hand);
+            entity
+                .get_mut::<Hands<EnterSignal, S>>()
+                .unwrap()
+                .push(hand);
         }
         let id = entity.id();
         entity.world_scope(|world| {
-            world.resource_mut::<Events<EnterSignal>>().send(EnterSignal { entity: id });
-            world.resource::<FlowResource>().register_handle_enter_systems::<S>();
+            world
+                .resource_mut::<Events<EnterSignal>>()
+                .send(EnterSignal { entity: id });
+            world
+                .resource::<FlowResource>()
+                .register_handle_enter_systems::<S>();
         });
     }
 }
 
 impl OnDemandSignal<UpdateSignal> {
-    pub fn assign<'w, S: SystemParam + 'static, F: Fn(&UpdateSignal, &mut StaticSystemParam<S>) + 'static>(&self, entity: &mut EntityMut<'w>, func: F) {
+    pub fn assign<
+        'w,
+        S: SystemParam + 'static,
+        F: Fn(&UpdateSignal, &mut StaticSystemParam<S>) + 'static,
+    >(
+        &self,
+        entity: &mut EntityMut<'w>,
+        func: F,
+    ) {
         let hand = Hand {
-            func: Handler(Box::new(func))
+            func: Handler(Box::new(func)),
         };
         if !entity.contains::<Hands<UpdateSignal, S>>() {
-            entity.insert((
-                Hands(vec![hand]),
-                FlowItem,
-            ));
+            entity.insert((Hands(vec![hand]), FlowItem));
         } else {
-            entity.get_mut::<Hands<UpdateSignal, S>>().unwrap().0.push(hand);
+            entity
+                .get_mut::<Hands<UpdateSignal, S>>()
+                .unwrap()
+                .0
+                .push(hand);
         }
         let id = entity.id();
         entity.world_scope(|world| {
             world.resource_mut::<BypassUpdates>().insert(id);
-            world.resource::<FlowResource>().register_handle_update_systems::<S>();
+            world
+                .resource::<FlowResource>()
+                .register_handle_update_systems::<S>();
         });
     }
 }
@@ -977,7 +996,10 @@ pub struct NotifyChange<C: Component> {
 }
 impl<C: Component> NotifyChange<C> {
     pub fn new(entity: Entity) -> Self {
-        NotifyChange { entity, marker: PhantomData }
+        NotifyChange {
+            entity,
+            marker: PhantomData,
+        }
     }
 }
 impl<C: Component> Command for NotifyChange<C> {

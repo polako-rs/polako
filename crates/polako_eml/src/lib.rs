@@ -5,10 +5,10 @@ use bevy::{
         system::{Command, CommandQueue},
         world::EntityMut,
     },
-    prelude::{*, Resource},
+    prelude::{Resource, *},
 };
 use polako_constructivism::{traits::Construct, *};
-use polako_flow::{OnDemandSignal, EnterSignal, UpdateSignal, NotifyChange};
+use polako_flow::{EnterSignal, NotifyChange, OnDemandSignal, UpdateSignal};
 
 #[cfg(test)]
 mod tests;
@@ -21,10 +21,6 @@ pub mod msg {
 pub trait Element: ElementBuilder {
     type Signals: Singleton + 'static;
 }
-
-
-
-
 
 pub trait ElementBuilder: Component + Construct + Sized {
     fn build_element(content: Vec<Entity>) -> Blueprint<Self>;
@@ -74,13 +70,16 @@ pub trait Behavior: Segment + Component {
 /// tree is built. Like `AcceptOnly<T>` in `#[construct(TabView -> AcceptOnly<Tab> -> Div)]
 pub trait Constraint: Segment + IntoBundle {}
 
-
-pub trait PolakoType: TypeReference where Self::Type: Component {
+pub trait PolakoType: TypeReference
+where
+    Self::Type: Component,
+{
     fn notify_changed(&self, commands: &mut Commands, entity: Entity);
 }
 
 impl<T: TypeReference> PolakoType for T
-where Self::Type: Component
+where
+    Self::Type: Component,
 {
     fn notify_changed(&self, commands: &mut Commands, entity: Entity) {
         commands.add(NotifyChange::<Self::Type>::new(entity))
@@ -156,7 +155,6 @@ impl<R: Resource + Construct> Clone for ResourceMark<R> {
     }
 }
 
-
 pub struct Eml<Root: ElementBuilder>(Box<dyn FnOnce(&mut World, Entity)>, PhantomData<Root>);
 
 unsafe impl<Root: ElementBuilder> Send for Eml<Root> {}
@@ -201,10 +199,9 @@ impl ElementBuilder for Empty {
     }
 }
 
-
 pub struct EmptySignals;
 impl Singleton for EmptySignals {
-    fn instance() ->  &'static Self {
+    fn instance() -> &'static Self {
         &EmptySignals
     }
 }

@@ -1,10 +1,13 @@
-use constructivist::throw;
-use proc_macro2::{Ident, TokenStream, Span};
-use syn::{parse::{ParseBuffer, Parse}, Token, token, parenthesized, LitStr, Lit, spanned::Spanned, Expr};
-use quote::quote;
 use crate::eml::EmlContext;
-
-
+use constructivist::throw;
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::{
+    parenthesized,
+    parse::{Parse, ParseBuffer},
+    spanned::Spanned,
+    token, Expr, Lit, LitStr, Token,
+};
 
 pub trait PeekBindDirection {
     fn peek_bind_direction(&self) -> bool;
@@ -13,8 +16,8 @@ pub trait PeekBindDirection {
 impl<'a> PeekBindDirection for ParseBuffer<'a> {
     fn peek_bind_direction(&self) -> bool {
         self.peek(Token![=>])
-        || self.peek(Token![<=])
-        || (self.peek(Token![<=]) && self.peek2(Token![=>]))
+            || self.peek(Token![<=])
+            || (self.peek(Token![<=]) && self.peek2(Token![=>]))
     }
 }
 
@@ -53,27 +56,18 @@ pub trait ParsePropMap {
     fn parse_prop_map(&self, path: &mut Vec<Ident>) -> syn::Result<Option<BindMap>>;
 }
 
-
 impl<'a> ParsePropMap for ParseBuffer<'a> {
     fn parse_prop_map(&self, path: &mut Vec<Ident>) -> syn::Result<Option<BindMap>> {
         Ok(match self.peek_prop_map() {
             PropMapKind::Call => Some(self.parse()?),
-            PropMapKind::Mult |
-            PropMapKind::Div |
-            PropMapKind::Add |
-            PropMapKind::Sub => {
+            PropMapKind::Mult | PropMapKind::Div | PropMapKind::Add | PropMapKind::Sub => {
                 path.push(self.parse()?);
                 Some(self.parse()?)
-            },
+            }
             PropMapKind::None => None,
         })
     }
 }
-
-
-
-
-
 
 pub enum BindMap {
     Format(LitStr, Vec<Lit>),
@@ -89,8 +83,8 @@ impl BindMap {
                     fargs = quote! { #fargs #arg, };
                 }
                 quote! { |s| format!(#fargs)  }
-            },
-            BindMap::Custom(c) => c.clone()
+            }
+            BindMap::Custom(c) => c.clone(),
         })
     }
     pub fn span(&self) -> Span {
@@ -103,7 +97,7 @@ impl BindMap {
 
 impl Parse for BindMap {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        // parse time.elapsed_seconds * 0.5 
+        // parse time.elapsed_seconds * 0.5
         //                            ------
         if input.peek(Token![*]) {
             input.parse::<Token![*]>()?;
@@ -113,19 +107,19 @@ impl Parse for BindMap {
             }));
         }
 
-        // parse time.elapsed_seconds / 0.5 
+        // parse time.elapsed_seconds / 0.5
         //                            ------
-        if input.peek(Token![/]) { 
+        if input.peek(Token![/]) {
             input.parse::<Token![/]>()?;
             let expr = input.parse::<Expr>()?;
             return Ok(BindMap::Custom(quote! {
                 |v| v / #expr
             }));
         }
-        
-        // parse time.elapsed_seconds + 0.5 
+
+        // parse time.elapsed_seconds + 0.5
         //                            ------
-        if input.peek(Token![+]) { 
+        if input.peek(Token![+]) {
             input.parse::<Token![+]>()?;
             let expr = input.parse::<Expr>()?;
             return Ok(BindMap::Custom(quote! {
@@ -133,9 +127,9 @@ impl Parse for BindMap {
             }));
         }
 
-        // parse time.elapsed_seconds - 0.5 
+        // parse time.elapsed_seconds - 0.5
         //                            ------
-        if input.peek(Token![-]) { 
+        if input.peek(Token![-]) {
             input.parse::<Token![-]>()?;
             let expr = input.parse::<Expr>()?;
             return Ok(BindMap::Custom(quote! {
@@ -144,7 +138,7 @@ impl Parse for BindMap {
         }
 
         // parse time.elapsed_seconds.fmt("{}")
-        //                            ---------  
+        //                            ---------
         let ident = input.parse::<Ident>()?;
         if &ident.to_string() != "fmt" {
             throw!(ident, "Expected fmt ident");
