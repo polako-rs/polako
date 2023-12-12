@@ -1,0 +1,14 @@
+[package]
+name = "polako_ui"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy = "0.12"
+bevy-vello = { git = "https://github.com/vectorgameexperts/bevy-vello.git", rev = "v0.3" }
+peniko = { git = "https://github.com/linebender/peniko", rev = "629fc3325b016a8c98b1cd6204cb4ddf1c6b3daa" }
+taffy = "0.3.18"
+vello = { git = "https://github.com/linebender/vello", rev = "28914d66f675efecf03c53261a0fb1b8ecce4fe9" }
+polako_channel = { path = "../polako_channel" }
