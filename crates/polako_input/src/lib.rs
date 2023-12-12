@@ -129,7 +129,7 @@ pub struct PointerQuery {
     global_transform: &'static GlobalTransform,
     filter: Option<&'static ActivePointerFilter>,
     calculated_clip: Option<&'static CalculatedClip>,
-    computed_visibility: Option<&'static ComputedVisibility>,
+    computed_visibility: Option<&'static InheritedVisibility>,
 }
 
 #[derive(Default)]
@@ -218,7 +218,7 @@ pub fn pointer_input_system(
             if let Ok(node) = pointer_query.get(*entity) {
                 // Nodes that are not rendered should not be interactable
                 if let Some(computed_visibility) = node.computed_visibility {
-                    if !computed_visibility.is_visible() {
+                    if !computed_visibility.get() {
                         return None;
                     }
                 }

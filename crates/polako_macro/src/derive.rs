@@ -385,7 +385,7 @@ impl DeriveSignal {
                     F: Fn(&#ident, &mut ::bevy::ecs::system::StaticSystemParam<S>) + 'static
                 >(
                     &self,
-                    entity: &mut ::bevy::ecs::world::EntityMut<'w>,
+                    entity: &mut ::bevy::ecs::world::EntityWorldMut<'w>,
                     handler: F,
                 ) {
                     entity.register_signal_handler::<#ident, S, F>(handler);

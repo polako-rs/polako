@@ -3,7 +3,7 @@ use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 use bevy::{
     ecs::{
         system::{Command, CommandQueue},
-        world::EntityMut,
+        world::EntityWorldMut,
     },
     prelude::{Resource, *},
 };
@@ -275,7 +275,7 @@ impl CommandStackItem {
             e.insert(bundle);
         });
     }
-    pub fn entity<F: FnOnce(&mut EntityMut) + Send + Sync + 'static>(
+    pub fn entity<F: FnOnce(&mut EntityWorldMut) + Send + Sync + 'static>(
         &mut self,
         entity: Entity,
         func: F,

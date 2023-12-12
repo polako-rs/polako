@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 polako_constructivism = { path = "../polako_constructivism"}
 polako_input = { path = "../polako_input"}
-bevy = "0.11.3"
+polako_channel = { path = "../polako_channel"}
+bevy = "0.12"

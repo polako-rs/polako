@@ -282,7 +282,7 @@ impl ElementBuilder for Row {
     }
 }
 
-use bevy::ecs::world::EntityMut;
+use bevy::ecs::world::EntityWorldMut;
 use polako_constructivism::Is;
 use polako_constructivism::Singleton;
 impl DivDesign {
@@ -337,9 +337,9 @@ impl Styles {
         })
     }
 }
-pub struct StyleProperty<T>(fn(&mut EntityMut, T));
+pub struct StyleProperty<T>(fn(&mut EntityWorldMut, T));
 impl<T> StyleProperty<T> {
-    pub fn assign<'w>(&self, entity: &mut EntityMut<'w>, value: T) {
+    pub fn assign<'w>(&self, entity: &mut EntityWorldMut<'w>, value: T) {
         (self.0)(entity, value)
     }
 }

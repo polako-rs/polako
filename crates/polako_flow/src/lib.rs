@@ -5,11 +5,12 @@ use std::{
 use bevy::{
     ecs::{
         system::{Command, StaticSystemParam, SystemBuffer, SystemParam},
-        world::EntityMut,
+        world::EntityWorldMut, schedule::ScheduleLabel,
     },
     prelude::*,
     utils::{HashMap, HashSet},
 };
+use polako_channel::Channel;
 use polako_constructivism::*;
 
 pub mod input;
@@ -89,7 +90,7 @@ fn cleanup_component_readers<S: Component, T: Component, V: Bindable>(
     mut targets: ResMut<BindTargets>,
     mut removals: RemovedComponents<FlowItem>,
 ) {
-    for target in removals.iter() {
+    for target in removals.read() {
         for source in targets.0.remove(&target).unwrap_or_default().iter() {
             if let Ok(mut source) = sources.get_mut(*source) {
                 source.0.remove(&target);
@@ -102,7 +103,7 @@ fn cleanup_on_demand_updates(
     mut removals: RemovedComponents<FlowItem>,
     mut bypass_updates: ResMut<BypassUpdates>,
 ) {
-    for entity in removals.iter() {
+    for entity in removals.read() {
         bypass_updates.remove(&entity);
     }
 }
@@ -130,7 +131,7 @@ fn cleanup_resource_readers<S: Resource, T: Component, V: Bindable>(
     mut sources: ResMut<ResourceBindSources<S, T, V>>,
     mut removals: RemovedComponents<FlowItem>,
 ) {
-    for target in removals.iter() {
+    for target in removals.read() {
         sources.0.remove(&target);
     }
 }
@@ -289,9 +290,12 @@ impl RegisteredSystems {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, ScheduleLabel)]
+pub struct FlowLabel;
+
 impl Flow {
     fn new() -> Self {
-        let mut schedule = Schedule::new();
+        let mut schedule = Schedule::new(FlowLabel);
         schedule.configure_sets((
             FlowSet::CleanupReaders.after(FlowSet::CleanupChanges),
             FlowSet::CollectChanges.after(FlowSet::CleanupReaders),
@@ -508,7 +512,7 @@ pub trait EntityFlow {
     );
 }
 
-impl<'w> EntityFlow for EntityMut<'w> {
+impl<'w> EntityFlow for EntityWorldMut<'w> {
     fn register_signal_handler<
         E: Signal,
         S: SystemParam + 'static,
@@ -538,45 +542,7 @@ impl<T: Send + Sync + Clone + PartialEq + std::fmt::Debug + 'static> Bindable fo
 
 pub type ComponentChanges<'w, T> = Res<'w, Channel<ChangedEntity<T>>>;
 type Changes<'w, T, V> = Res<'w, Channel<ApplyChange<T, V>>>;
-#[derive(Resource)]
-pub struct Channel<T>(RwLock<HashMap<ThreadId, Rc<RefCell<Vec<T>>>>>);
-unsafe impl<T> Send for Channel<T> {}
-unsafe impl<T> Sync for Channel<T> {}
-impl<T> Channel<T> {
-    fn new() -> Self {
-        Self(RwLock::new(HashMap::new()))
-    }
-    fn clear(&self) {
-        for cell in self.0.read().unwrap().values() {
-            cell.borrow_mut().clear()
-        }
-    }
-    pub fn send(&self, event: T) {
-        let id = std::thread::current().id();
-        {
-            let read = self.0.read().unwrap();
-            let item = read.get(&id);
-            if let Some(events) = item {
-                events.borrow_mut().push(event);
-                return;
-            }
-        }
-        {
-            self.0
-                .write()
-                .unwrap()
-                .insert(id, Rc::new(RefCell::new(vec![event])));
-        }
-    }
-    fn recv<F: FnMut(&T)>(&self, mut recv: F) {
-        for cell in self.0.read().unwrap().values() {
-            let borrow = cell.borrow();
-            for item in borrow.iter() {
-                recv(item)
-            }
-        }
-    }
-}
+
 
 #[derive(Resource)]
 pub struct ChangedEntities<C: Component> {
@@ -837,7 +803,7 @@ fn handle_enters<S: SystemParam + 'static>(
     mut params: StaticSystemParam<S>,
 ) {
     // let x = params.into_inner()
-    for (entity, hands) in hands_query.iter_many(new_elements.iter().map(|e| e.entity)) {
+    for (entity, hands) in hands_query.iter_many(new_elements.read().map(|e| e.entity)) {
         let sig = EnterSignal { entity };
         hands.iter().for_each(|h| {
             info!("Handling enter for {entity:?}");
@@ -864,7 +830,7 @@ fn handle_signals_system<E: Signal, S: SystemParam + 'static>(
 ) {
     // let x = *params;
     // info!("handling signals systems, num events: {}", reader.len());
-    for (entity, event) in reader.iter().filter_map(|e| E::filter(e).map(|n| (n, e))) {
+    for (entity, event) in reader.read().filter_map(|e| E::filter(e).map(|n| (n, e))) {
         info!("handling event on {entity:?}");
         if let Ok(hands) = hands_query.get(entity) {
             hands
@@ -934,7 +900,7 @@ impl OnDemandSignal<EnterSignal> {
         F: Fn(&EnterSignal, &mut StaticSystemParam<S>) + 'static,
     >(
         &self,
-        entity: &mut EntityMut<'w>,
+        entity: &mut EntityWorldMut<'w>,
         func: F,
     ) {
         let hand = Hand::new(func);
@@ -965,7 +931,7 @@ impl OnDemandSignal<UpdateSignal> {
         F: Fn(&UpdateSignal, &mut StaticSystemParam<S>) + 'static,
     >(
         &self,
-        entity: &mut EntityMut<'w>,
+        entity: &mut EntityWorldMut<'w>,
         func: F,
     ) {
         let hand = Hand {

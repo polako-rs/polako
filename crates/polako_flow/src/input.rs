@@ -46,7 +46,7 @@ macro_rules! impl_signal {
                     ) + 'static,
             >(
                 &self,
-                entity: &mut ::bevy::ecs::world::EntityMut<'w>,
+                entity: &mut ::bevy::ecs::world::EntityWorldMut<'w>,
                 func: F,
             ) {
                 let hand = $crate::Hand::new(func);
