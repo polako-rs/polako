@@ -271,7 +271,7 @@ impl RegisteredSystems {
 
 impl Flow {
     fn new() -> Self {
-        let mut schedule = Schedule::new();
+        let mut schedule = Schedule::default();
         schedule.configure_sets((
             FlowSet::CleanupReaders.after(FlowSet::CleanupChanges),
             FlowSet::CollectChanges.after(FlowSet::CleanupReaders),

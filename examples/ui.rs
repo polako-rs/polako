@@ -20,7 +20,6 @@ fn main() {
         .run();
 }
 
-
 fn hello_world(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.add(eml! {
@@ -137,7 +136,7 @@ impl Element for Row {
     }
 }
 
-use bevy::ecs::world::EntityMut;
+use bevy::ecs::world::EntityWorldMut;
 use polako_constructivism::Is;
 impl DivDesign {
     // Div can accept string literals as content
@@ -180,9 +179,9 @@ impl Styles {
         })
     }
 }
-pub struct StyleProperty<T>(fn(EntityMut, T));
+pub struct StyleProperty<T>(fn(EntityWorldMut, T));
 impl<T> StyleProperty<T> {
-    pub fn assign<'w>(&self, entity: EntityMut<'w>, value: T) {
+    pub fn assign<'w>(&self, entity: EntityWorldMut<'w>, value: T) {
         (self.0)(entity, value)
     }
 }
