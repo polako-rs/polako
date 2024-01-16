@@ -1,11 +1,42 @@
-use bevy::ecs::system::StaticSystemParam;
 use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
 
-#[derive(Signal)]
-pub struct Pressed {
-    entity: Entity,
+// move mouse around the center of the screen and see logs
+fn example(mut commands: Commands) {
+    commands.spawn(Camera2dBundle::default());
+    commands.add(eml! {
+        resource(time, Time);
+        Body [
+            Column {
+                .on.enter: () => {
+                    info("Column enters.");
+                },
+                .on.update: (e) => {
+                    if time.elapsed > 1. && time.elapsed <= 2. {
+                        info("elapsed time in 1..2");
+                        delta.take_damage.emit(.amount: time.elapsed);
+                    } else if time.elapsed < 1.0 {
+                        info("elapsed time < 1");
+                    }
+                    delta.text = e.delta.fmt("Frame time: {:0.4}");
+                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
+                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
+                },
+                .on.motion: (e) => {
+                    info("motion at {:?} (is motion: {})", e.position.rel, e.motion);
+                }
+            } [
+                delta: Label {
+                    .text: "0.0000",
+                    .on.take_damage: (e) => {
+                        info("taking damage {}", e.amount);
+                    }
+                },
+                elapsed: Label { .text: "0.00" },
+            ]
+        ]
+    });
 }
 
 #[derive(Signal)]
@@ -28,7 +59,7 @@ fn main() {
         }))
         .add_plugins(FlowPlugin)
         .add_plugins(PolakoInputPlugin)
-        .add_systems(Startup, hello_world)
+        .add_systems(Startup, example)
         .add_systems(Update, ui_text_system)
         .add_systems(Update, div_system)
         .run();
@@ -72,147 +103,6 @@ impl ElementBuilder for Label {
             Label::Base + TextBundle
         }
     }
-}
-
-#[derive(Default)]
-pub struct Dummy;
-
-fn hello_world(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
-    commands.add(eml! {
-        resource(time, Time);
-        Body [
-            Column {
-                .on.enter: () => {
-                    info("Column enters.");
-                },
-                .on.update: (e) => {
-                    if time.elapsed > 1. && time.elapsed <= 2. {
-                        info("1..2");
-                        delta.take_damage.emit(.amount: time.elapsed);
-                    } else if -time.elapsed > -(1.0) {
-                        info("< 1");
-                    }
-                    delta.text = e.delta.fmt("Frame time: {:0.4}");
-                    elapsed.text = time.elapsed.fmt("Elapsed time: {:0.2}");
-                    elapsed.bg.g = (time.elapsed - 2.) * 0.5;
-                    // info("Updated with delta = {:0.4}s", e.delta);
-                },
-                .on.motion: () => {
-                    info("motioning");
-                }
-            } [
-                delta: Label {
-                    .text: "0.0000",
-                    .on.take_damage: (e) => {
-                        info("taking damage {}", e.amount);
-                        // info("taking damage");
-                    }
-                },
-                elapsed: Label { .text: "0.00" },
-            ]
-        ]
-    });
-}
-
-// Expanded `.on.update: () => { ... }`
-use polako_constructivism::*;
-use polako_eml::EntityMark;
-fn _expand(world: &mut World) {
-    let mut __entity__ = world.spawn_empty();
-    let entity = __entity__.id();
-    let elapsed = EntityMark::<Label>::new(entity);
-    let delta = EntityMark::<Label>::new(entity);
-    let time = ResourceMark::<Time>::new();
-
-    let __ext__ = <<Body as Construct>::Design as Singleton>::instance()
-        .on()
-        .update();
-    __ext__.assign(
-        &mut __entity__,
-        move |e: &_, // infers as &UpdateSignal
-              _params: &mut StaticSystemParam<(
-            Commands,
-            ParamSet<(
-                Query<&mut _>, // infers as Query<&mut UiText>
-                Res<_>,        // infers as Res<Time>
-                Query<&mut _>, // infers as Query<&mut Div>
-            )>,
-        )>| {
-            let (_commands, _params) = ::std::ops::DerefMut::deref_mut(_params);
-            let _v_time_elapsed = {
-                let _host = _params.p1();
-                time.getters().elapsed(&_host).into_value().get()
-            };
-            let _v_delta_text = {
-                let _inset = _params.p0();
-                let _mut = _inset.get(delta.entity).unwrap();
-                let _host = &_mut;
-                delta.getters().text(&_host).into_value().get()
-            };
-            let _v_e_delta = {
-                let _host = e;
-                e.getters().delta(&_host).into_value().get()
-            };
-            let _v_elapsed_text = {
-                let _inset = _params.p0();
-                let _mut = _inset.get(elapsed.entity).unwrap();
-                let _host = &_mut;
-                elapsed.getters().text(&_host).into_value().get()
-            };
-            let _v_elapsed_bg_g = {
-                let _inset = _params.p2();
-                let _mut = _inset.get(elapsed.entity).unwrap();
-                let _host = &_mut;
-                elapsed.getters().bg(&_host).g().into_value().get()
-            };
-            {
-                let _val = ({
-                    let res = format!("Frame time: {:0.4}", _v_e_delta);
-                    res
-                })
-                .into();
-                if _v_delta_text != _val {
-                    delta
-                        .setters()
-                        .set_text(_params.p0().get_mut(delta.entity).unwrap().as_mut(), _val);
-                    delta
-                        .descriptor()
-                        .text()
-                        .notify_changed(_commands, delta.entity);
-                }
-            };
-            {
-                let _val = ({
-                    let res = format!("Elapsed time: {:0.2}", _v_time_elapsed);
-                    res
-                })
-                .into();
-                if _v_elapsed_text != _val {
-                    elapsed
-                        .setters()
-                        .set_text(_params.p0().get_mut(elapsed.entity).unwrap().as_mut(), _val);
-                    elapsed
-                        .descriptor()
-                        .text()
-                        .notify_changed(_commands, elapsed.entity);
-                }
-            };
-            {
-                let _val = ((_v_time_elapsed - 2.) * 0.5).into();
-                if _v_elapsed_bg_g != _val {
-                    elapsed
-                        .setters()
-                        .bg(_params.p2().get_mut(elapsed.entity).unwrap().as_mut())
-                        .set_g(_val);
-                    elapsed
-                        .descriptor()
-                        .bg()
-                        .notify_changed(_commands, elapsed.entity);
-                }
-            };
-        },
-    );
 }
 
 impl ElementBuilder for Div {

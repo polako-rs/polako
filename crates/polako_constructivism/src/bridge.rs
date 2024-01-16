@@ -108,7 +108,7 @@ derive_construct! {
     };
 }
 
-trait ReadOnly {
+pub trait ReadOnly {
     fn readonly<T>(&mut self, _: T) {
         warn!("Attempt to set readonly prop");
     }

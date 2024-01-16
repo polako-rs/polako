@@ -6,7 +6,9 @@ use bevy::{
     ui::{CalculatedClip, Node, UiStack},
     window::{PrimaryWindow, Window, WindowRef},
 };
-use polako_constructivism::Construct;
+use polako_constructivism::{Construct, Get, Singleton};
+use polako_constructivism::derive_construct;
+use polako_constructivism::bridge::ReadOnly;
 
 pub struct PolakoInputPlugin;
 
@@ -18,7 +20,7 @@ impl Plugin for PolakoInputPlugin {
     }
 }
 
-#[derive(Construct, Default, Clone)]
+#[derive(Construct, Default, Clone, Copy)]
 pub struct PointerInputPosition {
     abs: Vec2,
     rel: Vec2,
@@ -50,6 +52,9 @@ pub struct PointerInput {
 }
 
 impl PointerInput {
+    pub fn position(&self) -> PointerInputPosition {
+        self.position
+    }
     pub fn up(&self) -> bool {
         match self.data {
             PointerInputData::Up => true,
@@ -103,7 +108,24 @@ pub enum PointerFilter {
     Block,
 }
 
-// derive_behaviour
+impl ReadOnly for PointerInput { }
+
+derive_construct! {
+    seq => PointerInput -> Nothing;
+    construct => (entity: Entity, position: PointerInputPosition, data: PointerInputData) -> {
+        PointerInput { entity, position, data }
+    };
+    props => {
+        position: PointerInputPosition = construct;
+        motion: bool = [motion, readonly];
+    };
+}
+// TODO: implement getters(&self) in constructivism
+impl PointerInput {
+    pub fn getters(&self) -> &'static pointerinput_construct::Props<Get> {
+        pointerinput_construct::Props::instance()
+    }
+}
 
 impl PointerFilter {
     pub fn pointer_filter(&self) -> Self {
