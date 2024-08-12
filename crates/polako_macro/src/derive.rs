@@ -77,7 +77,7 @@ impl DeriveBehavior {
         Ok(quote! {
             #segment
             impl ::bevy::ecs::component::Component for #ident {
-                type Storage = ::bevy::ecs::component::TableStorage;
+                const STORAGE_TYPE: bevy::ecs::component::StorageType = bevy::ecs::component::StorageType::Table;
             }
             impl #eml::IntoBundle for #ident {
                 type Output = Self;
@@ -212,7 +212,7 @@ impl DeriveElement {
         Ok(quote! {
             #construct
             impl ::bevy::ecs::component::Component for #ident {
-                type Storage = ::bevy::ecs::component::TableStorage;
+                const STORAGE_TYPE: bevy::ecs::component::StorageType = bevy::ecs::component::StorageType::Table;
             }
             impl #eml::Element for #ident {
                 type Signals = #mod_element::Signals;
@@ -355,8 +355,9 @@ impl DeriveSignal {
                     <<#ident as #cst::Construct>::Props<#cst::Get> as #cst::Singleton>::instance()
                 }
             }
-            impl ::bevy::prelude::Event for #ident {
-
+            impl ::bevy::prelude::Event for #ident {}
+            impl ::bevy::prelude::Component for #ident {
+                const STORAGE_TYPE: ::bevy::ecs::component::StorageType = ::bevy::ecs::component::StorageType::SparseSet;
             }
             #impl_args
             pub struct #descriptor;

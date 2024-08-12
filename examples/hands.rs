@@ -1,3 +1,4 @@
+use bevy::ecs::query::{QueryItem, ROQueryItem};
 use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
@@ -5,7 +6,8 @@ use polako::flow::*;
 // move mouse around the center of the screen and see logs
 fn example(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
-    commands.add(eml! {
+    commands.add(
+        eml! {
         resource(time, Time);
         Body [
             Column {
@@ -26,7 +28,8 @@ fn example(mut commands: Commands) {
                 .on.motion: (e) => {
                     info("motion at {:?} (is motion: {})", e.position.rel, e.motion);
                 }
-            } [
+            }
+             [
                 delta: Label {
                     .text: "0.0000",
                     .on.take_damage: (e) => {
@@ -36,7 +39,8 @@ fn example(mut commands: Commands) {
                 elapsed: Label { .text: "0.00" },
             ]
         ]
-    });
+    }
+    );
 }
 
 #[derive(Signal)]
@@ -90,7 +94,7 @@ pub struct Div {
 pub struct UiText {
     /// The text value of UiText element.
     pub text: String,
-    #[param(default = Color::hex("2f2f2f").unwrap())]
+    #[param(default = Color::Srgba(Srgba::hex("2f2f2fff").unwrap()))]
     pub text_color: Color,
 }
 
@@ -239,7 +243,7 @@ impl Default for UiText {
     fn default() -> Self {
         UiText {
             text: "".into(),
-            text_color: Color::hex("2f2f2f").unwrap(),
+            text_color: Color::Srgba(Srgba::hex("2f2f2fff").unwrap()),
         }
     }
 }
@@ -250,7 +254,7 @@ impl WithText for TextBundle {
     fn with_text<T: AsRef<str>>(text: T) -> TextBundle {
         let mut text = TextBundle::from_section(text.as_ref(), Default::default());
         text.text.sections[0].style.font_size = 24.;
-        text.text.sections[0].style.color = Color::hex("2f2f2f").unwrap();
+        text.text.sections[0].style.color = Color::Srgba(Srgba::hex("2f2f2fff").unwrap());
         text
     }
 }
@@ -258,7 +262,7 @@ impl WithText for Text {
     fn with_text<T: AsRef<str>>(text: T) -> Self {
         let mut text = Text::from_section(text.as_ref().to_string(), Default::default());
         text.sections[0].style.font_size = 24.;
-        text.sections[0].style.color = Color::hex("2f2f2f").unwrap();
+        text.sections[0].style.color = Color::Srgba(Srgba::hex("2f2f2fff").unwrap());
         text
     }
 }
@@ -266,7 +270,7 @@ impl WithText for Text {
 /// bypass Div.background to BackgroundColor.0 when changed
 /// and Div.padding to Style.padding
 fn div_system(mut colors: Query<(&Div, &mut BackgroundColor), Changed<Div>>) {
-    colors.for_each_mut(|(div, mut bg)| {
+    colors.iter_mut().for_each(|(div, mut bg)| {
         bg.0 = div.bg.into();
     });
 }

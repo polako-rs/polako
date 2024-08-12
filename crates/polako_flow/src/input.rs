@@ -34,7 +34,7 @@ macro_rules! impl_signal {
                         entity,
                         position,
                         data: PointerInputData::$variant,
-                    })
+                    });
             }
 
             pub fn assign<

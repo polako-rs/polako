@@ -1,4 +1,4 @@
-use bevy::{prelude::{DerefMut, Deref}, math::Vec2, ecs::{component::Component, query::{WorldQuery, Without, With, Changed, Or}, system::{Query, Resource, Commands, ResMut, Local, Res}, entity::{Entity, Entities}, removal_detection::RemovedComponents}, hierarchy::{Children, Parent}, utils::{HashMap, HashSet}, window::{Window, PrimaryWindow}, log::warn};
+use bevy::{ecs::{component::Component, entity::{Entities, Entity}, query::{Changed, Or, QueryData, With, Without}, removal_detection::RemovedComponents, system::{Commands, Local, Query, Res, ResMut, Resource}}, hierarchy::{Children, Parent}, log::warn, math::Vec2, prelude::{Deref, DerefMut}, utils::{HashMap, HashSet}, window::{PrimaryWindow, Window}};
 use polako_channel::Channel;
 // use taffy::
 
@@ -89,7 +89,7 @@ impl<T> std::ops::Deref for StyleProp<T> {
     }
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct StyleProps {
     container: &'static StyleProp<Container>,
     padding: Option<&'static StyleProp<Padding>>,

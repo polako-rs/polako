@@ -1,11 +1,10 @@
 use std::{
-    any::TypeId, cell::RefCell, marker::PhantomData, rc::Rc, sync::RwLock, thread::ThreadId,
+    any::TypeId, cell::RefCell, marker::PhantomData, rc::Rc,
 };
 
 use bevy::{
     ecs::{
-        system::{Command, StaticSystemParam, SystemBuffer, SystemParam},
-        world::EntityWorldMut, schedule::ScheduleLabel,
+        schedule::ScheduleLabel, system::{StaticSystemParam, SystemBuffer, SystemParam}, world::{Command, EntityWorldMut}
     },
     prelude::*,
     utils::{HashMap, HashSet},

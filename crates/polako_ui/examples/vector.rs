@@ -3,8 +3,7 @@ use bevy::utils::HashSet;
 use bevy::utils::synccell::SyncCell;
 use vello::kurbo::{Affine, Rect, Stroke};
 use vello::peniko::{Color, Fill};
-use vello::{Renderer, RendererOptions, Scene, SceneBuilder, SceneFragment};
-
+use vello::{Renderer, RendererOptions, Scene};
 
 
 use bevy::{
@@ -19,14 +18,13 @@ use bevy::{
         RenderApp,
     },
 };
+use bevy::render::texture::GpuImage;
 
 #[derive(Component)]
 pub struct Tst(usize);
 
 fn t(mut q: Query<Option<&mut Tst>>) {
-    for i in q.iter_mut() {
-
-    }
+    for i in q.iter_mut() {}
 }
 
 #[derive(Resource)]
@@ -42,12 +40,12 @@ impl FromWorld for VelloRenderer {
                 device.wgpu_device(),
                 RendererOptions {
                     surface_format: None,
-                    timestamp_period: queue.0.get_timestamp_period(),
                     antialiasing_support: vello::AaSupport::all(),
                     use_cpu: false,
+                    num_init_threads: None,
                 },
             )
-            .unwrap(),
+                .unwrap(),
         ))
     }
 }
@@ -56,7 +54,7 @@ struct VelloPlugin;
 
 impl Plugin for VelloPlugin {
     fn build(&self, app: &mut App) {
-        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
         // This should probably use the render graph, but working out the dependencies there is awkward
@@ -64,7 +62,7 @@ impl Plugin for VelloPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
         render_app.init_resource::<VelloRenderer>();
@@ -74,7 +72,7 @@ impl Plugin for VelloPlugin {
 fn render_scenes(
     mut renderer: ResMut<VelloRenderer>,
     mut scenes: Query<&VelloScene>,
-    gpu_images: Res<RenderAssets<Image>>,
+    gpu_images: Res<RenderAssets<GpuImage>>,
     device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
 ) {
@@ -107,35 +105,26 @@ fn main() {
         .add_systems(Startup, setup)
         .add_plugins(ExtractComponentPlugin::<VelloScene>::default())
         .add_systems(Update, render_fragment)
-        .run()
-
-
+        .run();
 }
 
 #[derive(Component)]
 pub struct VelloTarget(Handle<Image>);
 
 #[derive(Component)]
-// In the future, this will probably connect to the bevy heirarchy with an Affine component
-pub struct VelloFragment(SceneFragment);
-
-#[derive(Component)]
 struct VelloScene(Scene, Handle<Image>);
 
 impl ExtractComponent for VelloScene {
-    type Query = (&'static VelloFragment, &'static VelloTarget);
+    type QueryData = (&'static VelloScene, &'static VelloTarget);
 
-    type Filter = ();
+    type QueryFilter = ();
 
     type Out = Self;
 
     fn extract_component(
-        (fragment, target): bevy::ecs::query::QueryItem<'_, Self::Query>,
+        (scene, target): bevy::ecs::query::QueryItem<'_, Self::QueryData>,
     ) -> Option<Self> {
-        let mut scene = Scene::default();
-        let mut builder = SceneBuilder::for_scene(&mut scene);
-        builder.append(&fragment.0, None);
-        Some(Self(scene, target.0.clone()))
+        Some(Self(scene.0.clone(), target.0.clone()))
     }
 }
 
@@ -175,23 +164,23 @@ fn setup(
     let x = 1;
     let b = Box::new(&x);
     take_box(b);
-    
+
     let image_handle = images.add(image);
     commands.spawn(SpriteBundle {
         texture: image_handle.clone(),
         transform: Transform::from_scale(Vec3::splat(0.5)),
         ..default()
     });
-    commands.spawn((
-        VelloFragment(SceneFragment::default()),
-        VelloTarget(image_handle),
-    ));
+    commands.spawn(
+        (
+            VelloScene(Scene::new(), image_handle.clone()),
+            VelloTarget(image_handle),
+        )
+    );
 }
 
-fn take_box(b: Box<&usize>) {
-
-}
-fn closure<'a, I: Iterator<Item = &'a str>, F: Fn(&'a str, usize, usize) -> I>(func: F) -> F {
+fn take_box(b: Box<&usize>) {}
+fn closure<'a, I: Iterator<Item=&'a str>, F: Fn(&'a str, usize, usize) -> I>(func: F) -> F {
     func
 }
 fn get_card_score(line: &str) -> u32 {
@@ -214,9 +203,8 @@ fn get_card_score(line: &str) -> u32 {
     return 0;
 }
 
-fn render_fragment(mut fragment: Query<&mut VelloFragment>) {
-    let mut fragment = fragment.single_mut();
-    let mut sb = SceneBuilder::for_fragment(&mut fragment.0);
+fn render_fragment(mut scene: Query<&mut VelloScene>) {
+    let scene = &mut scene.single_mut().0;
     let dark = Color::rgb(0.2, 0.2, 0.2);
     let light = Color::rgb(0.8, 0.8, 0.8);
     // let linear =  Gradient::new_linear((0.0, 0.0), (0.0, 200.0)).with_stops([
@@ -228,14 +216,14 @@ fn render_fragment(mut fragment: Query<&mut VelloFragment>) {
         (a..b).map(|x| x + 1)
     };
     let c = x(0, 2);
-    sb.fill(
+    scene.fill(
         Fill::NonZero,
         Affine::IDENTITY,
         &light,
         None,
         &Rect::new(128., 128., 512. - 128., 512. - 128.).to_rounded_rect(32.),
     );
-    sb.stroke(
+    scene.stroke(
         &Stroke::new(8.),
         Affine::IDENTITY,
         &dark,

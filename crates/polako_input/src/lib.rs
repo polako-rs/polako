@@ -1,14 +1,16 @@
+use bevy::render::camera::NormalizedRenderTarget;
+use bevy::utils::HashMap;
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::{QueryData, WorldQuery},
     prelude::*,
     render::camera::RenderTarget,
     time::Time,
     ui::{CalculatedClip, Node, UiStack},
     window::{PrimaryWindow, Window, WindowRef},
 };
-use polako_constructivism::{Construct, Get, Singleton};
-use polako_constructivism::derive_construct;
 use polako_constructivism::bridge::ReadOnly;
+use polako_constructivism::derive_construct;
+use polako_constructivism::{Construct, Get, Singleton};
 
 pub struct PolakoInputPlugin;
 
@@ -108,7 +110,7 @@ pub enum PointerFilter {
     Block,
 }
 
-impl ReadOnly for PointerInput { }
+impl ReadOnly for PointerInput {}
 
 derive_construct! {
     seq => PointerInput -> Nothing;
@@ -143,15 +145,16 @@ pub enum ActivePointerFilter {
     Block,
 }
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct PointerQuery {
     entity: Entity,
     node: &'static Node,
     global_transform: &'static GlobalTransform,
     filter: Option<&'static ActivePointerFilter>,
     calculated_clip: Option<&'static CalculatedClip>,
-    computed_visibility: Option<&'static InheritedVisibility>,
+    view_visibility: Option<&'static ViewVisibility>,
+    target_camera: Option<&'static TargetCamera>,
 }
 
 #[derive(Default)]
@@ -182,92 +185,104 @@ pub fn bypass_filter_system(
 // it emit PointerEvent with associated entities and data.
 pub fn pointer_input_system(
     mut state: Local<PointerSystemState>,
-    camera: Query<(&Camera, Option<&UiCameraConfig>)>,
-    primary_window: Query<&Window, With<PrimaryWindow>>,
-    windows: Query<&Window, Without<PrimaryWindow>>,
-    mouse_button_input: Res<Input<MouseButton>>,
+    camera_query: Query<(Entity, &Camera)>,
+    default_ui_camera: DefaultUiCamera,
+    primary_window: Query<Entity, With<PrimaryWindow>>,
+    windows: Query<&Window>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     touches_input: Res<Touches>,
+    ui_scale: Res<UiScale>,
     ui_stack: Res<UiStack>,
     time: Res<Time>,
     pointer_query: Query<PointerQuery>,
     mut events: EventWriter<PointerInput>,
 ) {
-    let up =
+    let mouse_released =
         mouse_button_input.just_released(MouseButton::Left) || touches_input.any_just_released();
-    let down =
+    let mouse_clicked =
         mouse_button_input.just_pressed(MouseButton::Left) || touches_input.any_just_pressed();
 
-    let is_ui_disabled =
-        |camera_ui| matches!(camera_ui, Some(&UiCameraConfig { show_ui: false, .. }));
+    let primary_window = primary_window.iter().next();
 
-    let cursor_position = camera
+    let camera_cursor_positions: HashMap<Entity, Vec2> = camera_query
         .iter()
-        .filter(|(_, camera_ui)| !is_ui_disabled(*camera_ui))
-        .filter_map(|(camera, _)| {
-            if let RenderTarget::Window(window_ref) = camera.target {
-                Some(window_ref)
-            } else {
-                None
-            }
-        })
-        .filter_map(|window_ref| {
-            if let WindowRef::Entity(entity) = window_ref {
-                windows.get(entity).ok()
-            } else {
-                primary_window.get_single().ok()
-            }
-        })
-        .filter(|window| window.focused)
-        .find_map(|window| window.cursor_position())
-        .or_else(|| touches_input.first_pressed_position());
+        .filter_map(|(entity, camera)| {
+            let Some(NormalizedRenderTarget::Window(window_ref)) =
+                camera.target.normalize(primary_window)
+            else {
+                return None;
+            };
 
-    if down {
-        state.press_position = cursor_position;
+            let viewport_position = camera
+                .logical_viewport_rect()
+                .map(|rect| rect.min)
+                .unwrap_or_default();
+
+            windows
+                .get(window_ref.entity())
+                .ok()
+                .and_then(|window| window.cursor_position())
+                .or_else(|| touches_input.first_pressed_position())
+                .map(|cursor_position| (entity, cursor_position - viewport_position))
+        })
+        .map(|(entity, cursor_position)| (entity, cursor_position / ui_scale.0))
+        .collect();
+
+    let first_camera_cursor_position = camera_cursor_positions
+        .iter()
+        .next()
+        .map(|position| *position.1);
+
+    if mouse_clicked {
+        state.press_position = first_camera_cursor_position;
         state.drag_in_seconds = Some(0.5);
     }
-    let delta = match (cursor_position, state.last_cursor_position) {
+    let delta = match (first_camera_cursor_position, state.last_cursor_position) {
         (Some(c), Some(l)) => c - l,
         _ => Vec2::ZERO,
     };
 
-    state.last_cursor_position = cursor_position;
+    state.last_cursor_position = first_camera_cursor_position;
     let mut moused_over_nodes = ui_stack
         .uinodes
         .iter()
         // reverse the iterator to traverse the tree from closest nodes to furthest
         .rev()
         .filter_map(|entity| {
-            if let Ok(node) = pointer_query.get(*entity) {
-                // Nodes that are not rendered should not be interactable
-                if let Some(computed_visibility) = node.computed_visibility {
-                    if !computed_visibility.get() {
-                        return None;
-                    }
-                }
+            let Ok(node) = pointer_query.get(*entity) else {
+                return None;
+            };
 
-                let position = node.global_transform.translation();
-                let ui_position = position.truncate();
-                let extents = node.node.size() / 2.0;
-                let mut min = ui_position - extents;
-                let mut max = ui_position + extents;
-                if let Some(clip) = node.calculated_clip {
-                    min = Vec2::max(min, clip.clip.min);
-                    max = Vec2::min(max, clip.clip.max);
-                }
-                // if the current cursor position is within the bounds of the node, consider it for
-                // emiting the event
-                let contains_cursor = if let Some(cursor_position) = cursor_position {
-                    (min.x..max.x).contains(&cursor_position.x)
-                        && (min.y..max.y).contains(&cursor_position.y)
-                } else {
-                    false
-                };
+            let view_visibility = node.view_visibility?;
 
-                if contains_cursor {
-                    Some(*entity)
-                } else {
-                    None
-                }
+            if !view_visibility.get() {
+                return None;
+            }
+
+            let camera_entity = node
+                .target_camera
+                .map(TargetCamera::entity)
+                .or(default_ui_camera.get())?;
+
+            let node_rect = node.node.logical_rect(node.global_transform);
+
+            let visible_rect = node
+                .calculated_clip
+                .map(|clip| node_rect.intersect(clip.clip))
+                .unwrap_or(node_rect);
+
+            let relative_cursor_position = camera_cursor_positions
+                .get(&camera_entity)
+                .map(|cursor_position| (*cursor_position - node_rect.min) / node_rect.size());
+
+            let normalized_visible_node_rect = visible_rect.normalize(node_rect);
+
+            let contains_cursor = relative_cursor_position
+                .map(|position| normalized_visible_node_rect.contains(position))
+                .unwrap_or(false);
+
+            if contains_cursor {
+                Some(*entity)
             } else {
                 None
             }
@@ -293,7 +308,7 @@ pub fn pointer_input_system(
         state.dragging = true;
         drag_start_entities = state.pressed_entities.clone();
     }
-    let send_drag_stop = state.dragging && up;
+    let send_drag_stop = state.dragging && mouse_released;
     let mut drag_stop_entities = vec![];
     if send_drag_stop {
         drag_stop_entities = state.dragging_from.clone();
@@ -306,11 +321,11 @@ pub fn pointer_input_system(
         }
         let entity = node.entity;
 
-        if down {
+        if mouse_clicked {
             state.pressed_entities.push(entity);
             down_entities.push(entity);
         }
-        if up {
+        if mouse_released {
             up_entities.push(entity);
             let pressed_entity_idx = state.pressed_entities.iter().position(|e| *e == entity);
             if let Some(pressed_entity_idx) = pressed_entity_idx {
@@ -337,8 +352,10 @@ pub fn pointer_input_system(
         }
     }
 
-    let Some(pos) = cursor_position else { return };
-    if down_entities.len() > 0 {
+    let Some(pos) = first_camera_cursor_position else {
+        return;
+    };
+    if !down_entities.is_empty() {
         // TODO: do not forget about drag_in_seconds here
         // state.was_down_at = time.elapsed_seconds();
         for entity in down_entities.iter().copied() {
@@ -404,7 +421,7 @@ pub fn pointer_input_system(
         });
     }
 
-    if up {
+    if mouse_released {
         state.pressed_entities.clear();
         state.dragging_from.clear();
         state.press_position = None;

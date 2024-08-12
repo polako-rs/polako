@@ -1,9 +1,8 @@
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use bevy::{
-    ecs::{
-        system::{Command, CommandQueue},
-        world::EntityWorldMut,
+    ecs::world::{
+        Command, CommandQueue
     },
     prelude::{Resource, *},
 };

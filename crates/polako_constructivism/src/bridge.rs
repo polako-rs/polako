@@ -68,31 +68,65 @@ derive_construct! {
 }
 
 pub trait ColorProps {
+    fn r(&self) -> f32;
+    fn set_r(&mut self, r: f32);
+    fn g(&self) -> f32;
+    fn set_g(&mut self, g: f32);
+    fn b(&self) -> f32;
+    fn set_b(&mut self, b: f32);
+    fn a(&self) -> f32;
+    fn set_a(&mut self, a: f32);
     fn get_hex(&self) -> String;
     fn set_hex(&mut self, hex: impl AsRef<str>);
 }
 impl ColorProps for Color {
+    fn r(&self) -> f32 {
+        Srgba::from(*self).red
+    }
+    fn set_r(&mut self, r: f32) {
+        let mut srgba = Srgba::from(*self);
+        srgba.red = r;
+        *self = Color::Srgba(srgba);
+    }
+    fn g(&self) -> f32 {
+        Srgba::from(*self).green
+    }
+    fn set_g(&mut self, g: f32) {
+        let mut srgba = Srgba::from(*self);
+        srgba.green = g;
+        *self = Color::Srgba(srgba);
+    }
+    fn b(&self) -> f32 {
+        Srgba::from(*self).blue
+    }
+    fn set_b(&mut self, b: f32) {
+        let mut srgba = Srgba::from(*self);
+        srgba.blue = b;
+        *self = Color::Srgba(srgba);
+    }
+    fn a(&self) -> f32 {
+        Srgba::from(*self).alpha
+    }
+    fn set_a(&mut self, a: f32) {
+        let mut srgba = Srgba::from(*self);
+        srgba.alpha = a;
+        *self = Color::Srgba(srgba);
+    }
     fn get_hex(&self) -> String {
-        format!(
-            "{:02x}{:2x}{:02x}{:02x}",
-            (self.r().clamp(0., 1.) * 255.).round() as usize,
-            (self.g().clamp(0., 1.) * 255.).round() as usize,
-            (self.b().clamp(0., 1.) * 255.).round() as usize,
-            (self.a().clamp(0., 1.) * 255.).round() as usize,
-        )
+        Srgba::from(*self).to_hex()
     }
     fn set_hex(&mut self, hex: impl AsRef<str>) {
         let hex = hex.as_ref();
-        *self = Color::hex(hex).unwrap_or_else(|_| {
+        *self = Color::Srgba(Srgba::hex(hex).unwrap_or_else(|_| {
             info!("Cant parse '{hex}` as color, using WHITE.");
-            Color::WHITE
-        })
+            Srgba::WHITE
+        }))
     }
 }
 derive_construct! {
     seq => Color -> Nothing;
     construct => (hex: String = format!("")) -> {
-        Color::hex(hex).unwrap_or_default()
+        Color::Srgba(Srgba::hex(hex).unwrap_or_default())
     };
     props => {
         /// Red channel

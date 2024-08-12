@@ -94,7 +94,7 @@ impl Color {
     pub fn is_complete(&self) -> bool {
         self.digits >= 8
     }
-    pub fn rgba(&self) -> syn::Result<(f32, f32, f32, f32)> {
+    pub fn srgba(&self) -> syn::Result<(f32, f32, f32, f32)> {
         match self.digits {
             // rgb, alpha = 1.0
             3 => Ok((
@@ -137,9 +137,9 @@ impl Color {
         }
     }
     pub fn build(&self, ctx: Ref<EmlContext>) -> syn::Result<TokenStream> {
-        let (r, g, b, a) = self.rgba()?;
+        let (r, g, b, a) = self.srgba()?;
         let bevy = ctx.path("bevy");
-        Ok(quote!(#bevy::prelude::Color::rgba(#r, #g, #b, #a)))
+        Ok(quote!(#bevy::prelude::Color::srgba(#r, #g, #b, #a)))
     }
 }
 

@@ -94,7 +94,7 @@ impl HandBuilder {
             match point.mark.kind {
                 MarkKind::Entity => {
                     if point.write {
-                        items = quote! { #items ::bevy::prelude::Query<&mut _>, };
+                        items = quote! { #items ::bevy::prelude::Query<Mut<_>>, };
                     } else {
                         items = quote! { #items ::bevy::prelude::Query<& _>, };
                     }

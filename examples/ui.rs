@@ -2,11 +2,6 @@ use bevy::prelude::*;
 use polako::eml::*;
 use polako::flow::*;
 
-#[derive(Signal)]
-pub struct Pressed {
-    entity: Entity,
-}
-
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -33,8 +28,8 @@ fn hello_world(mut commands: Commands) {
         bind(time.elapsed * 0.5 - 0.5 => content.bg.r);
         bind(content.bg.hex => color.text);
         Body + Name { .value: "body" } [
-            content: Column { .bg: #9d9d9d, .s.padding: [25, 50] }[
-                Div { .bg: #dedede, .s.padding: 50 } [
+            content: Column { .bg: #9d9d9dff, .s.padding: [25, 50] }[
+                Div { .bg: #dededeff, .s.padding: 50 } [
                     "Hello world!"
                 ],
                 Row [
@@ -69,7 +64,7 @@ impl ElementBuilder for Div {
 pub struct UiText {
     /// The text value of UiText element.
     pub text: String,
-    #[param(default = Color::hex("2f2f2f").unwrap())]
+    #[param(default = Color::Srgba(Srgba::hex("2f2f2fff").unwrap()))]
     pub text_color: Color,
 }
 
@@ -205,7 +200,7 @@ impl Default for UiText {
     fn default() -> Self {
         UiText {
             text: "".into(),
-            text_color: Color::hex("2f2f2f").unwrap(),
+            text_color: Color::Srgba(Srgba::hex("2f2f2fff").unwrap()),
         }
     }
 }
@@ -216,7 +211,7 @@ impl WithText for TextBundle {
     fn with_text<T: AsRef<str>>(text: T) -> TextBundle {
         let mut text = TextBundle::from_section(text.as_ref(), Default::default());
         text.text.sections[0].style.font_size = 24.;
-        text.text.sections[0].style.color = Color::hex("2f2f2f").unwrap();
+        text.text.sections[0].style.color = Color::Srgba(Srgba::hex("2f2f2fff").unwrap());
         text
     }
 }
@@ -224,16 +219,15 @@ impl WithText for Text {
     fn with_text<T: AsRef<str>>(text: T) -> Self {
         let mut text = Text::from_section(text.as_ref().to_string(), Default::default());
         text.sections[0].style.font_size = 24.;
-        text.sections[0].style.color = Color::hex("2f2f2f").unwrap();
+        text.sections[0].style.color = Color::Srgba(Srgba::hex("2f2f2fff").unwrap());
         text
     }
 }
 
 /// bypass Div.background to BackgroundColor.0 when changed
-/// and Div.padding to Style.padding
 fn div_system(mut colors: Query<(&Div, &mut BackgroundColor), Changed<Div>>) {
-    colors.for_each_mut(|(div, mut bg)| {
-        bg.0 = div.bg.into();
+    colors.iter_mut().for_each(|(div, mut bg)| {
+        bg.0 = div.bg;
     });
 }
 
@@ -244,7 +238,7 @@ fn ui_text_system(mut texts: Query<(&UiText, &mut Text), Changed<UiText>>) {
             *text = Text::with_text("");
         }
         text.sections[0].value = ui_text.text.clone();
-        text.sections[0].style.color = ui_text.text_color.into();
+        text.sections[0].style.color = ui_text.text_color;
     }
 }
 

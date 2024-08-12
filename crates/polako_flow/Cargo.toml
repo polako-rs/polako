@@ -9,4 +9,4 @@ edition = "2021"
 polako_constructivism = { path = "../polako_constructivism"}
 polako_input = { path = "../polako_input"}
 polako_channel = { path = "../polako_channel"}
-bevy = "0.12"
+bevy = "0.14"

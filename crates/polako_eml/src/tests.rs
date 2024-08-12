@@ -1,10 +1,10 @@
-use bevy::ecs::component::TableStorage;
+use bevy::ecs::component::StorageType;
 
 use super::*;
 
 pub struct XXX;
 impl Component for XXX {
-    type Storage = TableStorage;
+    const STORAGE_TYPE: StorageType = StorageType::Table;
 }
 
 #[derive(Element)]
@@ -80,8 +80,8 @@ impl ElementBuilder for Bold {
 fn test_div_with_text() {
     let mut app = App::new();
     let eml = eml! { Div [ "text" ] };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<&Div>().iter(world).len());
     assert_eq!(1, world.query::<&TextElement>().iter(world).len());
     assert_eq!("text", world.query::<&TextElement>().single(world).text);
@@ -97,9 +97,9 @@ fn test_div_with_text() {
 fn test_labels() {
     let mut app = App::new();
     let eml = eml! { Label { .text: "text" } };
-    eml.apply(&mut app.world);
+    eml.apply(&mut app.world_mut());
     app.update();
-    let world = &mut app.world;
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<&Label>().iter(world).len());
     assert_eq!(1, world.query::<&TextElement>().iter(world).len());
     assert_eq!(1, world.query::<(&TextElement, &Label)>().iter(world).len());
@@ -110,8 +110,8 @@ fn test_labels() {
 fn test_bold_text() {
     let mut app = App::new();
     let eml = eml! { Bold { .text: "some bold text" } };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(
         1,
         world
@@ -138,8 +138,8 @@ impl ElementBuilder for UiNode {
 fn test_blueprint_patch_self() {
     let mut app = App::new();
     let eml = eml! { UiNode };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<(&UiNode, &Div, &Node)>().iter(world).len());
 }
 #[derive(Component, Default)]
@@ -160,8 +160,8 @@ impl ElementBuilder for MixPatch {
 fn test_blueprint_mix_patch() {
     let mut app = App::new();
     let eml = eml! { MixPatch };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(
         1,
         world
@@ -188,8 +188,8 @@ impl ElementBuilder for MixConstruct {
 fn test_blueprint_mix_construct() {
     let mut app = App::new();
     let eml = eml! { MixConstruct };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<(&MixConstruct, &Name)>().iter(world).len());
     assert_eq!(
         "mix_construct",
@@ -201,8 +201,8 @@ fn test_blueprint_mix_construct() {
 fn test_eml_mix_construct() {
     let mut app = App::new();
     let eml = eml! { Div + Name { .value: "hello" } };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<(&Div, &Name)>().iter(world).len());
     assert_eq!("hello", world.query::<&Name>().single(world).as_str());
 }
@@ -211,8 +211,8 @@ fn test_eml_mix_construct() {
 fn test_eml_mix_patch() {
     let mut app = App::new();
     let eml = eml! { Div + TestComponent(.value: "world") };
-    eml.apply(&mut app.world);
-    let world = &mut app.world;
+    eml.apply(&mut app.world_mut());
+    let world = &mut app.world_mut();
     assert_eq!(1, world.query::<(&Div, &TestComponent)>().iter(world).len());
     assert_eq!(
         "world",
